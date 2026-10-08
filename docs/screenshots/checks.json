@@ -1,11 +1,12 @@
 {
-  "target": "http://127.0.0.1:3201",
+  "target": "http://127.0.0.1:3203",
   "checks": [
     "production homepage responds and restores empty state",
     "cannot advance without enough cards",
     "blank cards rejected",
     "card editing/deletion and safe text rendering",
     "example, stage focus, selection validation and partial restore",
+    "chosen cards bridge into three question groups without skipping to prompt",
     "generated prompt includes chosen sources and edited requirements only",
     "completed stage and manually edited prompt restore",
     "clipboard denied/success feedback and correct copied content (mocked)",
@@ -18,5 +19,5 @@
     "storage unavailable still allows working",
     "no page JavaScript errors"
   ],
-  "total": 16
+  "total": 17
 }

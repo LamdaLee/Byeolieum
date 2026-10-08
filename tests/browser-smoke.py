@@ -10,7 +10,7 @@ def check(name):
     print('PASS:',name,flush=True)
 with sync_playwright() as p:
     browser=p.chromium.launch(executable_path=os.getenv('BYEOLIEUM_CHROMIUM','/usr/bin/chromium'),headless=True,args=['--no-sandbox'],env={**os.environ,'NO_PROXY':'localhost,127.0.0.1'})
-    ctx=browser.new_context(viewport={'width':1440,'height':1000})
+    ctx=browser.new_context(viewport={'width':1440,'height':1000},reduced_motion='reduce')
     page=ctx.new_page()
     errors=[]
     page.on('pageerror',lambda e:errors.append(str(e)))
@@ -50,6 +50,13 @@ with sync_playwright() as p:
     expect(page.locator('.selected')).to_have_count(2)
     check('example, stage focus, selection validation and partial restore')
     page.get_by_role('button',name='다음 단계').click()
+    expect(page.get_by_role('heading',name='만들 것 정하기')).to_be_focused()
+    expect(page.locator('.idea-bridge li')).to_have_count(2)
+    assert page.locator('.idea-bridge').inner_text().find('매번 비슷한 준비를 반복해요.')==-1
+    expect(page.get_by_role('group')).to_have_count(3)
+    assert page.get_by_label('AI에 전달할 제작 프롬프트').count()==0
+    page.screenshot(path=str(ROOT/'docs/screenshots/idea-bridge.png'),full_page=True)
+    check('chosen cards bridge into three question groups without skipping to prompt')
     page.get_by_label('첫 버전의 핵심 기능은?').fill('항목 추가와 완료 표시만 구현')
     page.get_by_role('button',name='프롬프트 만들기').click()
     prompt=page.get_by_label('AI에 전달할 제작 프롬프트')
@@ -98,7 +105,7 @@ with sync_playwright() as p:
     expect(page.locator('.error')).to_contain_text('5개까지')
     expect(page.locator('.selected')).to_have_count(5)
     check('maximum five selected cards')
-    mobile=browser.new_context(viewport={'width':390,'height':844},is_mobile=True,has_touch=True)
+    mobile=browser.new_context(viewport={'width':390,'height':844},is_mobile=True,has_touch=True,reduced_motion='reduce')
     m=mobile.new_page();m.goto(BASE)
     m.get_by_role('button',name='예제로 체험하기').click()
     for step in range(4):
@@ -110,7 +117,12 @@ with sync_playwright() as p:
             if step==1:
                 m.locator('.selectable').nth(0).click();m.locator('.selectable').nth(1).click()
             m.get_by_role('button',name='다음 단계').click()
-        elif step==2:m.get_by_role('button',name='프롬프트 만들기').click()
+        elif step==2:
+            expect(m.get_by_role('heading',name='만들 것 정하기')).to_be_focused()
+            assert abs(m.locator('.work-panel').bounding_box()['y']-20)<3
+            expect(m.locator('.idea-bridge li')).to_have_count(2)
+            m.screenshot(path=str(ROOT/'docs/screenshots/mobile-idea.png'),full_page=True)
+            m.get_by_role('button',name='프롬프트 만들기').click()
     check('mobile full example flow and no overflow at all four stages')
     blocked=browser.new_context()
     blocked.add_init_script("Object.defineProperty(window,'localStorage',{get(){throw Error('unavailable')}})")

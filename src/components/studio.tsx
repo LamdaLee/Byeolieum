@@ -87,9 +87,25 @@ export default function Studio() {
     setNotice("");
     setError("");
   }
+  function revealStage() {
+    requestAnimationFrame(() => {
+      const title = heading.current;
+      if (!title) return;
+      title.focus({ preventScroll: true });
+      const panel = title.closest(".work-panel");
+      if (!panel) return;
+      const top = panel.getBoundingClientRect().top + window.scrollY - 20;
+      window.scrollTo({
+        top: Math.max(0, top),
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "instant"
+          : "smooth",
+      });
+    });
+  }
   function go(step: number) {
     update({ ...project, step });
-    requestAnimationFrame(() => heading.current?.focus());
+    revealStage();
   }
   function saveNote(e: React.FormEvent) {
     e.preventDefault();
@@ -144,7 +160,7 @@ export default function Studio() {
       return;
     }
     update({ ...project, step: 3, prompt: buildPrompt(project) });
-    requestAnimationFrame(() => heading.current?.focus());
+    revealStage();
   }
   async function copy() {
     try {
@@ -382,16 +398,29 @@ export default function Studio() {
                       ))}
                     </div>
                     <p className="selection-count">
-                      {chosen.length}/5개 선택 · 연결은 직접 정해요.
+                      {chosen.length}/5개 선택 · 다음에는 이 생각들을 하나의
+                      아이디어로 정리해요.
                     </p>
                   </>
                 )}
                 {project.step === 2 && (
                   <>
                     <p className="description">
-                      이번에 만들 작은 결과물을 정해 볼까요? 핵심 기능 하나부터
-                      시작해요.
+                      고른 생각이 곧 완성된 기획일 필요는 없어요. 아래 순서로
+                      무엇을 만들지 조금씩 정해 볼까요?
                     </p>
+                    <div className="idea-bridge">
+                      <strong>방금 연결한 생각 {chosen.length}개</strong>
+                      <ul>
+                        {chosen.map((card) => (
+                          <li key={card.id}>{card.text}</li>
+                        ))}
+                      </ul>
+                      <p>
+                        이 생각들의 공통점이나 함께 해결하고 싶은 일을 떠올려
+                        보세요. 그 내용을 아래 ‘아이디어의 목적’에 적으면 돼요.
+                      </p>
+                    </div>
                     {project.prompt && (
                       <p className="description">
                         다시 생성하면 이전에 직접 수정한 프롬프트가 새 결과로
@@ -403,29 +432,76 @@ export default function Studio() {
                       onSubmit={generate}
                       className="brief-form"
                     >
-                      {questions.map((q) => (
-                        <div key={q.key}>
-                          <label htmlFor={q.key}>{q.label}</label>
-                          <textarea
-                            id={q.key}
-                            rows={q.key === "check" ? 3 : 2}
-                            required
-                            maxLength={1000}
-                            value={project.brief[q.key]}
-                            placeholder={q.hint}
-                            onChange={(e) =>
-                              update({
-                                ...project,
-                                brief: {
-                                  ...project.brief,
-                                  [q.key]: e.target.value,
-                                },
-                              })
-                            }
-                          />
-                        </div>
+                      {[
+                        {
+                          title: "1. 생각을 아이디어로",
+                          description:
+                            "무엇을 만들고 싶은지 이름과 목적부터 정해요.",
+                          keys: ["title", "goal"],
+                        },
+                        {
+                          title: "2. 작은 기능 하나로",
+                          description:
+                            "누가 쓸지 정하고, 그 사람에게 꼭 필요한 기능만 골라요.",
+                          keys: ["audience", "feature"],
+                        },
+                        {
+                          title: "3. 직접 확인할 방법으로",
+                          description:
+                            "사용자가 해 볼 행동과 기대하는 결과를 적어요. 이 답이 AI 결과를 검증하는 기준이 돼요.",
+                          keys: ["check"],
+                        },
+                      ].map((group) => (
+                        <fieldset className="question-group" key={group.title}>
+                          <legend>{group.title}</legend>
+                          <p className="description">{group.description}</p>
+                          {group.keys.map((key) => {
+                            const q = questions.find(
+                              (question) => question.key === key,
+                            )!;
+                            return (
+                              <div key={q.key}>
+                                <label htmlFor={q.key}>
+                                  {q.key === "goal"
+                                    ? "아이디어의 목적"
+                                    : q.label}
+                                </label>
+                                {q.key === "goal" && (
+                                  <p className="field-hint">
+                                    어떤 불편을 줄이거나, 어떤 일을 해 보고
+                                    싶나요?
+                                  </p>
+                                )}
+                                <textarea
+                                  id={q.key}
+                                  rows={q.key === "check" ? 3 : 2}
+                                  required
+                                  maxLength={1000}
+                                  value={project.brief[q.key]}
+                                  placeholder={q.hint}
+                                  onChange={(e) =>
+                                    update({
+                                      ...project,
+                                      brief: {
+                                        ...project.brief,
+                                        [q.key]: e.target.value,
+                                      },
+                                    })
+                                  }
+                                />
+                              </div>
+                            );
+                          })}
+                        </fieldset>
                       ))}
                     </form>
+                    <div className="flow-summary">
+                      <strong>다음 단계에서는</strong>
+                      <p>
+                        지금 정한 아이디어와 조건을 AI에 전달할 문장으로 바꿔요.
+                        생성 후에도 직접 읽고 수정할 수 있어요.
+                      </p>
+                    </div>
                   </>
                 )}
                 {project.step === 3 && (
@@ -433,6 +509,13 @@ export default function Studio() {
                     <p className="description">
                       생각과 조건이 잘 담겼는지 읽어 보고, 자유롭게 수정하세요.
                     </p>
+                    <div className="flow-summary">
+                      <strong>{project.brief.title}</strong>
+                      <p>
+                        생각 {chosen.length}개 → 아이디어의 목적 → 핵심 기능 →
+                        확인 기준을 아래 프롬프트에 담았어요.
+                      </p>
+                    </div>
                     <label htmlFor="prompt">AI에 전달할 제작 프롬프트</label>
                     <textarea
                       id="prompt"
