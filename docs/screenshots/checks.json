@@ -1,5 +1,5 @@
 {
-  "target": "http://127.0.0.1:3217",
+  "target": "http://127.0.0.1:3219",
   "checks": [
     "production homepage and new canvas render",
     "blank validation, safe text, edit and delete",
@@ -30,6 +30,6 @@
   "total": 25,
   "performance": {
     "drag_frame_gap_p95_ms": 16.7,
-    "selection_frame_ms_4x_cpu": 6.2
+    "selection_frame_ms_4x_cpu": 15.2
   }
 }

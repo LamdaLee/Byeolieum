@@ -9,6 +9,7 @@ import {
 } from "@/lib/library";
 
 type Props = {
+  cloud?: boolean;
   items: SavedIdea[];
   selectedId: string | null;
   onSelect: (id: string) => void;
@@ -23,6 +24,7 @@ type Props = {
   notice: string;
 };
 export default function IdeaLibrary({
+  cloud = false,
   items,
   selectedId,
   onSelect,
@@ -60,7 +62,10 @@ export default function IdeaLibrary({
             아이디어 보관함 <small>{items.length}/30</small>
           </h2>
           <p>
-            아이디어를 꺼내 작은 실험으로 이어 가요. 이 브라우저에만 저장돼요.
+            아이디어를 꺼내 작은 실험으로 이어 가요.{" "}
+            {cloud
+              ? "계정에 저장하고 다른 기기에서도 이어 갈 수 있어요."
+              : "이 브라우저에만 저장돼요."}
           </p>
         </div>
         <div className="library-actions">

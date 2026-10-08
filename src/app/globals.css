@@ -419,6 +419,78 @@ button.secondary:not(:disabled):hover {
   border-radius: 14px;
   background: #fff;
 }
+.account-panel {
+  margin: 20px 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  padding: 20px;
+  overflow-wrap: anywhere;
+}
+.account-panel:empty {
+  display: none;
+}
+.account-heading,
+.account-rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.account-heading h2 {
+  font-size: 19px;
+  margin: 5px 0 12px;
+}
+.account-email {
+  color: var(--purple);
+  font-weight: 600;
+}
+.account-actions,
+.social-logins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0;
+}
+.account-panel button {
+  min-height: 44px;
+}
+.account-sync,
+.account-rail {
+  color: var(--purple);
+  font-size: 12px;
+}
+.account-login p {
+  font-size: 12px;
+  color: var(--muted);
+}
+.social-google,
+.social-kakao {
+  padding: 12px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.social-google {
+  background: white;
+  color: #333;
+  border: 1px solid #dadce0;
+}
+.social-kakao {
+  background: #fee500;
+  color: #191919;
+}
+@media (max-width: 600px) {
+  .social-logins {
+    flex-direction: column;
+  }
+  .account-panel {
+    padding: 16px;
+  }
+  .account-heading h2 {
+    font-size: 17px;
+  }
+}
 .work-actions > span {
   font-size: 12px;
   color: var(--muted);
@@ -683,6 +755,14 @@ button.secondary:not(:disabled):hover {
     flex-basis: 100%;
     flex-wrap: wrap;
     justify-content: flex-end;
+    gap: 6px;
+  }
+  .studio-header .header-actions button {
+    min-height: 44px;
+  }
+  .studio-header .header-actions .compact {
+    font-size: 10px !important;
+    padding: 8px 9px !important;
   }
 }
 .canvas-card > p {
@@ -1610,3 +1690,5 @@ button.secondary:not(:disabled):hover {
     scroll-behavior: auto !important;
   }
 }
+
+.social-naver { background: #03c75a; color: #fff; border: 1px solid #03c75a; }

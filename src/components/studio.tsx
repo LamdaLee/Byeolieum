@@ -1,6 +1,8 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { CloudDocument } from "@/lib/cloud";
 import {
   buildPrompt,
   buildIdeationPrompt,
@@ -26,6 +28,10 @@ import {
   type Experiment,
 } from "@/lib/library";
 const KEY = "byeolieum-project-v1";
+const AccountPanel = dynamic(() => import("./account-panel"), {
+  ssr: false,
+  loading: () => <p className="small-muted">계정 기능을 불러오고 있어요…</p>,
+});
 const stages = ["모으기", "연결하기", "구체화", "프롬프트"];
 const questions: {
   key: keyof Brief;
@@ -90,10 +96,37 @@ export default function Studio() {
   const [libraryError, setLibraryError] = useState("");
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [accountMounted, setAccountMounted] = useState(false);
+  const [cloudUserId, setCloudUserId] = useState<string | null>(null);
+  const guestSnapshot = useRef<
+    | (CloudDocument & {
+        blocked: boolean;
+        libraryError: string;
+        storageError: string;
+      })
+    | null
+  >(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const drawer = useRef<HTMLElement>(null);
   const abort = useRef<AbortController | null>(null);
   const requestId = useRef(0);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const params = new URLSearchParams(window.location.search);
+      if (
+        params.has("naver_login") ||
+        params.has("login_error") ||
+        params.has("code") ||
+        params.has("error") ||
+        window.location.hash.includes("error=")
+      ) {
+        setAccountOpen(true);
+        setAccountMounted(true);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       try {
@@ -123,7 +156,7 @@ export default function Studio() {
     return () => cancelAnimationFrame(frame);
   }, []);
   useEffect(() => {
-    if (!libraryReady || libraryBlocked) return;
+    if (!libraryReady || libraryBlocked || cloudUserId) return;
     function save() {
       try {
         localStorage.setItem(LIBRARY_KEY, JSON.stringify(library));
@@ -139,7 +172,7 @@ export default function Studio() {
       clearTimeout(timer);
       window.removeEventListener("pagehide", save);
     };
-  }, [library, libraryReady, libraryBlocked]);
+  }, [library, libraryReady, libraryBlocked, cloudUserId]);
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       try {
@@ -162,7 +195,7 @@ export default function Studio() {
     return () => cancelAnimationFrame(frame);
   }, []);
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || cloudUserId) return;
     function save() {
       try {
         localStorage.setItem(KEY, JSON.stringify(project));
@@ -176,7 +209,7 @@ export default function Studio() {
       clearTimeout(timer);
       window.removeEventListener("pagehide", save);
     };
-  }, [project, ready]);
+  }, [project, ready, cloudUserId]);
   useEffect(() => {
     const control = new AbortController();
     fetch("/api/ideas", { signal: control.signal, cache: "no-store" })
@@ -451,7 +484,12 @@ export default function Studio() {
     setNotice("생각 카드 하나를 삭제했어요.");
   }
   function reset() {
-    if (!window.confirm("이 브라우저의 카드와 작업을 모두 지울까요?")) return;
+    if (
+      !window.confirm(
+        "현재 작업의 카드와 작성 내용을 지울까요? 보관함은 유지돼요.",
+      )
+    )
+      return;
     stopIdeas();
     update(structuredClone(emptyProject));
     setLibrary((current) => ({ ...current, activeId: null }));
@@ -462,7 +500,7 @@ export default function Studio() {
     setEditorOpen(false);
     setPage(0);
     try {
-      localStorage.removeItem(KEY);
+      if (!cloudUserId) localStorage.removeItem(KEY);
     } catch {
       setStorageError("저장 기록을 삭제했는지 확인할 수 없어요.");
     }
@@ -496,8 +534,10 @@ export default function Studio() {
         : [item, ...library.items],
     };
     try {
-      localStorage.setItem(KEY, JSON.stringify(project));
-      localStorage.setItem(LIBRARY_KEY, JSON.stringify(next));
+      if (!cloudUserId) {
+        localStorage.setItem(KEY, JSON.stringify(project));
+        localStorage.setItem(LIBRARY_KEY, JSON.stringify(next));
+      }
     } catch {
       setLibraryError(
         "아이디어를 저장하지 못했어요. 현재 작업을 유지했어요. 브라우저 저장 공간을 확인해 주세요.",
@@ -604,6 +644,60 @@ export default function Studio() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setNotice("보관함 파일을 내려받았어요. 아이디어와 실험 기록이 포함돼요.");
   }
+  function activateCloud(value: CloudDocument, userId: string) {
+    if (editorDirty) return false;
+    if (!cloudUserId)
+      guestSnapshot.current = structuredClone({
+        version: 1,
+        project,
+        library,
+        blocked: libraryBlocked,
+        libraryError,
+        storageError,
+      });
+    stopIdeas();
+    setIdeas([]);
+    setAiMessage("");
+    setCloudUserId(userId);
+    setProject(value.project);
+    setLibrary(value.library);
+    setLibraryBlocked(false);
+    setLibraryError("");
+    setStorageError("");
+    setSelectedIdeaId(
+      value.library.activeId ?? value.library.items[0]?.id ?? null,
+    );
+    setEditorOpen(false);
+    setEditId(null);
+    setNote("");
+    setLibraryOpen(false);
+    setPage(0);
+    return true;
+  }
+  const returnToGuest = useCallback(() => {
+    const value = guestSnapshot.current;
+    if (!value) return;
+    guestSnapshot.current = null;
+    requestId.current++;
+    abort.current?.abort();
+    setAiBusy(false);
+    setIdeas([]);
+    setAiMessage("");
+    setCloudUserId(null);
+    setLibraryBlocked(value.blocked);
+    setLibraryError(value.libraryError);
+    setStorageError(value.storageError);
+    setProject(value.project);
+    setLibrary(value.library);
+    setSelectedIdeaId(
+      value.library.activeId ?? value.library.items[0]?.id ?? null,
+    );
+    setEditorOpen(false);
+    setEditId(null);
+    setNote("");
+    setLibraryOpen(false);
+    setPage(0);
+  }, []);
   return (
     <div className={`studio-shell stage-${project.step}`}>
       <a href="#studio-workspace" className="skip-link">
@@ -634,8 +728,22 @@ export default function Studio() {
         </nav>
         <div className="header-actions">
           <span className="save-indicator">
-            {storageError ? "브라우저 저장 불가" : "이 브라우저에 저장"}
+            {cloudUserId
+              ? "계정 작업 중"
+              : storageError
+                ? "브라우저 저장 불가"
+                : "이 브라우저에 저장"}
           </span>
+          <button
+            className="secondary compact"
+            aria-expanded={accountOpen}
+            onClick={() => {
+              setAccountMounted(true);
+              setAccountOpen(!accountOpen);
+            }}
+          >
+            {cloudUserId ? "내 계정" : "로그인 · 계정"}
+          </button>
           <button
             className="secondary compact"
             disabled={!libraryReady}
@@ -663,8 +771,22 @@ export default function Studio() {
         </div>
       </header>
       <main id="studio-workspace" className="studio-main">
+        {accountMounted && (
+          <AccountPanel
+            document={{ version: 1, project, library }}
+            mode={cloudUserId}
+            open={accountOpen}
+            ready={ready && libraryReady && !editorDirty}
+            importAllowed={!libraryBlocked}
+            onOpen={() => setAccountOpen(true)}
+            onClose={() => setAccountOpen(false)}
+            onActivate={activateCloud}
+            onGuest={returnToGuest}
+          />
+        )}
         {libraryOpen ? (
           <IdeaLibrary
+            cloud={Boolean(cloudUserId)}
             key={selectedIdeaId ?? library.items[0]?.id ?? "empty"}
             items={library.items}
             selectedId={selectedIdeaId}

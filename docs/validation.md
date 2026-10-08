@@ -64,3 +64,20 @@ python tests/api-smoke.py
 ```
 
 운영 기능에 모의 응답 옵션/키를 넣지 않는다. 실제 운영은 Vercel의 서버 환경변수로 OpenAI 키를 공급한다. 클라우드 개발 환경에서 실제 호출할 경우 Node.js 24의 `NODE_USE_ENV_PROXY=1`로 상속된 HTTP(S) 프록시를 사용하며 TLS 검증을 유지한다.
+
+## 계정 저장 / 세 소셜 로그인
+
+2026-10-08 검증: `npm test` 22개, lint, Production 빌드. 로컬 PostgreSQL 17에서 계정별 RLS, revision 충돌, 익명 RPC 차단, 네이버 비공개 테이블 접근 차단, 일회용 세션 소비와 만료를 검사했습니다.
+
+브라우저 계정 검사는 모의 Supabase 공개 URL로 빌드 후 실행합니다(실제 키 불필요).
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://fixture.supabase.test NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_fixture npm run build
+npm start -- --port 3219
+# 별도 터미널
+BYEOLIEUM_TEST_URL=http://127.0.0.1:3219 python tests/cloud-browser.py
+```
+
+게스트 가져오기, 원본 보존, 두 기기 복원, 충돌 시 자동 덮어쓰기 차단, 저장 실패/재시도, 로그아웃, 손상 보관함 보존, Google/Kakao PKCE 요청과 Naver 세션 교환/만료를 검사합니다. `tests/naver-bridge.test.mjs`는 실제 SDK를 사용하되 외부 HTTP를 fixture로 대체해 새 회원의 signup 인증과 기존 회원 magiclink 인증, UUID 재사용, 암호화된 전달의 일회용 소비를 검사합니다. 실제 제공자 동의 화면과 운영 Supabase 로그인은 키/제공자/SQL 등록 뒤 별도로 확인해야 합니다.
+
+`tests/cloud-rls-bootstrap.sql`, `tests/cloud-rls.sql`, `tests/naver-rls.sql`은 격리된 로컬 PostgreSQL 테스트용입니다. 운영에는 `supabase/migrations/`의 두 SQL만 순서대로 실행합니다.
