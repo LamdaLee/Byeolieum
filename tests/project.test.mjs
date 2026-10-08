@@ -43,3 +43,84 @@ test("restored incomplete projects return to a completable step", () => {
   p.brief.check = "";
   assert.equal(parseProject(JSON.stringify(p))?.step, 2);
 });
+
+test("older stored projects migrate without losing cards or edited prompt", () => {
+  const old = structuredClone(sampleProject);
+  delete old.positions;
+  delete old.question;
+  old.step = 3;
+  old.prompt = "기존 결과";
+  old.selected = ["sample-1", "sample-3"];
+  const restored = parseProject(JSON.stringify(old));
+  assert.equal(restored.prompt, "기존 결과");
+  assert.equal(restored.question, 0);
+  assert.deepEqual(restored.positions, {});
+  assert.deepEqual(restored.cards, old.cards);
+});
+test("invalid optional positions do not erase thought cards", () => {
+  const p = structuredClone(sampleProject);
+  p.positions = {
+    "sample-1": { x: Infinity, y: -20 },
+    unknown: { x: 30, y: 40 },
+  };
+  assert.deepEqual(parseProject(JSON.stringify(p)).positions, {});
+});
+test("AI inputs reject duplicates, empty notes and excessive cards", async () => {
+  const { parseIdeaCards } = await import("../src/lib/project.ts");
+  assert.equal(
+    parseIdeaCards([
+      { id: "a", text: "a" },
+      { id: "a", text: "b" },
+    ]),
+    null,
+  );
+  assert.equal(
+    parseIdeaCards([
+      { id: "a", text: " " },
+      { id: "b", text: "b" },
+    ]),
+    null,
+  );
+  assert.equal(
+    parseIdeaCards(
+      Array.from({ length: 6 }, (_, i) => ({ id: String(i), text: "note" })),
+    ),
+    null,
+  );
+  assert.deepEqual(
+    parseIdeaCards([
+      { id: "a", text: " hi " },
+      { id: "b", text: "b" },
+    ]),
+    [
+      { id: "a", text: "hi" },
+      { id: "b", text: "b" },
+    ],
+  );
+});
+test("AI results require three grounded ideas with at least two known sources", async () => {
+  const { parseIdeas } = await import("../src/lib/project.ts");
+  const idea = {
+    title: "작은 실험",
+    goal: "불편 줄이기",
+    audience: "초보자",
+    feature: "목록",
+    check: "추가하면 보인다",
+    reason: "두 메모의 공통점",
+    sourceIds: ["sample-1", "sample-3"],
+  };
+  const good = [
+    idea,
+    { ...idea, title: "다른 실험" },
+    { ...idea, title: "세 번째 실험" },
+  ];
+  assert.equal(parseIdeas(good, sampleProject.cards).length, 3);
+  for (const invalid of [
+    { ...idea, sourceIds: ["missing", "sample-1"] },
+    { ...idea, sourceIds: ["sample-1"] },
+    { ...idea, sourceIds: ["sample-1", "sample-1"] },
+    { ...idea, reason: "" },
+  ])
+    assert.equal(parseIdeas([idea, idea, invalid], sampleProject.cards), null);
+  assert.equal(parseIdeas([idea], sampleProject.cards), null);
+});

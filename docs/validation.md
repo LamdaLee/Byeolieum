@@ -1,28 +1,51 @@
-# 검증 기록
+# 검증 기록 v0.2
 
-2026-10-08, Node.js 24.19.0 / npm 11.9.0 / Next.js 16.4.0.
+2026-10-08. Node.js 24.19.0 / npm 11.9.0 / Next.js 16.4.0.
 
 - `npm run lint`: 오류·경고 없음.
-- `npm test`: 데이터/프롬프트 단위 테스트 4개 통과.
-- `npm run build`: TypeScript 검사 포함 프로덕션 빌드 통과.
-- 프로덕션 서버 대상 Chromium 브라우저 검사 17개 통과: 카드 입력·수정·삭제, 텍스트 안전 처리, 선택 범위, 원본 포함 여부, 단계 이동, 부분/완성 저장 복원, 프롬프트 재생성, 복사 성공·실패, 초기화, 손상된 저장 데이터, 저장 불가, 모바일 네 단계 완주, 가로 넘침, JavaScript 오류.
-- 복사 성공/실패 검사는 브라우저 clipboard 인터페이스를 대체해 검증했다. 모든 운영 브라우저의 클립보드 권한을 보장하는 검사는 아니다.
-- 데스크톱 1440×1000, 모바일 390×844. [PC 화면](screenshots/desktop.png), [모바일 화면](screenshots/mobile.png), [체크 결과](screenshots/checks.json).
+- `npm test`: 단위 테스트 8개 통과. 선택 원본과 요구사항 반영, 기존 기록 자동 보완, 위치 자료 검증, AI 입출력 원본 근거 검사.
+- `npm run build`: TypeScript 포함 프로덕션 빌드 통과.
+- 프로덕션 Chromium 검사 25개 통과. 카드 CRUD/텍스트 안전성, 선택 연결, 드래그/키보드 이동, 위치 저장, 자동 AI 호출 없음, 후보 근거/선택, 한 질문씩 진행/복원, 프롬프트 생성/편집/복사, 원본 삭제, 초기화/손상 기록, 50개 카드 페이지 처리, 느린 AI와 취소된 응답, 모바일, HTTP 입력/출처/본문 크기/키 없음 검사.
+- 모의 OpenAI 공급자를 연결한 실제 서버 경로 검사 5개 통과. 모델·JSON schema 요청 형식, 성공 결과, 존재하지 않는 원본 거부, 공급자 한도 안내, 분당 제한과 자동 재시도 없음.
 
-브라우저 검사 재실행(별도 터미널에서 프로덕션 서버 실행):
+## 성능 관찰
+데스크톱 1440×1000, 모바일 390×844. 이 환경에서 실제 드래그 중 프레임 간격 p95 **16.7ms**, CDP 4배 CPU 감속 시 선택 상태가 다음 프레임에 반영되는 시간 **7.6ms**. 테스트 예산은 각각 50ms/100ms 이하. 성능 값은 이 실행 환경의 관찰이며 모든 기기/네트워크의 보장은 아니다.
+
+직접 제작한 작업실 JS 청크는 gzip 약 **12.9KB**(React/Next 런타임 제외). 대형 그래프 라이브러리, AI SDK, 외부 글꼴 없이 구현했다. 드래그 중 DOM 좌표만 RAF 갱신, 시작할 때만 크기 측정, 놓을 때 상태/저장 갱신. 위치는 퍼센트로 저장. 한 화면 6개로 DOM 수를 제한하고 저장은 250ms 지연 병합한다.
+
+## 범위와 한계
+AI 후보 성공 UI와 서버 공급자 처리는 **가짜 응답을 사용한 검사**다. 실제 OpenAI 인증·모델 응답·요금은 키가 없어 검사하지 못했다. 키가 없는 실제 서버의 503 안내는 HTTP로 검증했다. 클립보드 성공/실패는 브라우저 인터페이스를 대체해 검사했다. 교육 효과/기기 동기화/결제는 범위 밖.
+
+[데스크톱](screenshots/desktop.png), [모바일](screenshots/mobile.png), [AI 후보 화면 — 모의 응답](screenshots/ai-candidates.png), [결과 JSON](screenshots/checks.json).
+
+## 브라우저 재실행
 
 ```bash
 npm run build
-npm start -- --port 3201
+npm start -- --port 3206
 ```
 
-Python `playwright` 패키지와 Chromium이 설치된 환경에서:
+Python playwright 및 Chromium 설치 환경의 별도 터미널에서:
 
 ```bash
-BYEOLIEUM_TEST_URL=http://127.0.0.1:3201 python tests/browser-smoke.py
+BYEOLIEUM_TEST_URL=http://127.0.0.1:3206 python tests/browser-smoke.py
 ```
 
-Chromium 경로가 다르면 `BYEOLIEUM_CHROMIUM`을 지정한다. 스크립트는 localhost 프로덕션을 기본으로 검사하며 스크린샷과 결과 JSON을 갱신한다. 외부 AI 구현, 실제 사용자 학습 효과, 서버 저장, 결제, 운영 배포는 검사 범위 밖이다.
+Chromium 경로가 다르면 `BYEOLIEUM_CHROMIUM`을 지정한다. 이 검사는 키 없는 서버를 기준으로 한다.
 
-## 카드 조합 이후 흐름 개선
-선택한 원본 카드 재확인, 세 질문 묶음, 프롬프트 출처 요약을 추가했다. 단계 제목 초점과 작업 패널 위치를 분리하고 모션 감소 설정을 반영했다. 모바일에서 단계 이동 뒤 패널 상단이 20px 위치에 나타나는지, 구체화 화면을 건너뛰지 않는지 검사했다.
+## 공급자 계약 재실행 — 네트워크 호출 없음
+아래 fixture는 테스트 프로세스에서만 고정 OpenAI endpoint를 가로챈다. 앱 코드나 운영 환경에서 import하지 않는다.
+
+```bash
+# 반복할 때 이전에 시작한 테스트 서버를 종료하고 요청 로그를 비운다.
+rm -f /tmp/byeolieum-mock-openai-calls.jsonl
+BYEOLIEUM_AI_API_KEY=mock-key-for-tests NODE_OPTIONS='--import ./tests/mock-openai.mjs' npm start -- --port 3210
+```
+
+별도 터미널:
+
+```bash
+python tests/api-smoke.py
+```
+
+운영 기능에 모의 응답 옵션/키를 넣지 않는다. 실제 운영은 Vercel의 서버 환경변수로 OpenAI 키를 공급한다. 클라우드 개발 환경에서 실제 호출할 경우 Node.js 24의 `NODE_USE_ENV_PROXY=1`로 상속된 HTTP(S) 프록시를 사용하며 TLS 검증을 유지한다.
