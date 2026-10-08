@@ -30,6 +30,7 @@ type Props = {
   goal: string;
   onToggle: (id: string) => void;
   onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
   onMove: (id: string, position: Position) => void;
   onArrange: () => void;
   onAdd: () => void;
@@ -44,6 +45,7 @@ export default memo(function Constellation({
   goal,
   onToggle,
   onEdit,
+  onDelete,
   onMove,
   onArrange,
   onAdd,
@@ -249,7 +251,8 @@ export default memo(function Constellation({
                   onClick={() => onEdit(card.id)}
                   aria-label={`카드 ${index + 1} 수정`}
                 >
-                  ···
+                  <span className="card-edit-dots" aria-hidden="true">···</span>
+                  <span className="card-edit-label" aria-hidden="true">수정</span>
                 </button>
               </div>
               <p>{card.text}</p>
@@ -263,6 +266,14 @@ export default memo(function Constellation({
               >
                 <span>{active ? "✓" : "＋"}</span>
                 {active ? "연결한 생각" : "이 생각 연결하기"}
+              </button>
+              <button
+                type="button"
+                className="card-delete"
+                onClick={() => onDelete(card.id)}
+                aria-label={`카드 ${index + 1} 삭제`}
+              >
+                삭제
               </button>
               <span className="connection-port" aria-hidden="true" />
             </article>

@@ -377,6 +377,10 @@ button.secondary:not(:disabled):hover {
   color: #79708e;
   padding: 3px 5px;
 }
+.card-edit-label,
+.card-delete {
+  display: none;
+}
 .canvas-card > p {
   font-size: 13px;
   line-height: 1.7;
@@ -1064,6 +1068,34 @@ button.secondary:not(:disabled):hover {
   }
   .card-select {
     font-size: 11px;
+  }
+  .card-edit {
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 12px;
+    border-radius: 8px;
+    background: #f4effb;
+  }
+  .card-edit-dots {
+    display: none;
+  }
+  .card-edit-label {
+    display: inline;
+  }
+  .card-select {
+    min-height: 44px;
+  }
+  .card-delete {
+    display: block;
+    min-width: 64px;
+    min-height: 44px;
+    margin-top: 8px;
+    margin-left: auto;
+    padding: 10px 16px;
+    border-radius: 8px;
+    color: #934545;
+    background: #fff3f3;
+    font-size: 12px;
   }
   .idea-node {
     position: relative;

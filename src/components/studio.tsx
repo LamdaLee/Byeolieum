@@ -347,21 +347,24 @@ export default function Studio() {
     setEditId(null);
     setEditorOpen(false);
   }
-  function removeCard() {
-    if (!editId) return;
-    const selected = project.selected.filter((id) => id !== editId);
+  function removeCard(id = editId) {
+    if (!id) return;
+    const selected = project.selected.filter((selectedId) => selectedId !== id);
     update({
       ...project,
-      cards: project.cards.filter((card) => card.id !== editId),
+      cards: project.cards.filter((card) => card.id !== id),
       selected,
       positions: Object.fromEntries(
-        Object.entries(project.positions).filter(([id]) => id !== editId),
+        Object.entries(project.positions).filter(([cardId]) => cardId !== id),
       ),
       step: project.step >= 2 && selected.length < 2 ? 1 : project.step,
     });
-    setEditId(null);
-    setNote("");
-    setEditorOpen(false);
+    if (editId === id) {
+      setEditId(null);
+      setNote("");
+      setEditorOpen(false);
+    }
+    setNotice("생각 카드 하나를 삭제했어요.");
   }
   function reset() {
     if (!window.confirm("이 브라우저의 카드와 작업을 모두 지울까요?")) return;
@@ -465,6 +468,9 @@ export default function Studio() {
                 goal={project.brief.goal}
                 onToggle={toggle}
                 onEdit={edit}
+                onDelete={(id) => {
+                  if (window.confirm("이 생각 카드를 삭제할까요?")) removeCard(id);
+                }}
                 onMove={(id, pos) =>
                   update({
                     ...project,
@@ -549,7 +555,7 @@ export default function Studio() {
                   </div>
                 </form>
                 {editId && (
-                  <button className="danger-button" onClick={removeCard}>
+                  <button className="danger-button" onClick={() => removeCard()}>
                     이 카드 삭제
                   </button>
                 )}
