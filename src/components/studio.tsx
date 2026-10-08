@@ -14,6 +14,17 @@ import {
 } from "@/lib/project";
 import Constellation from "./constellation";
 import { Mark } from "./mark";
+import IdeaLibrary from "./idea-library";
+import {
+  LIBRARY_KEY,
+  MAX_IDEAS,
+  emptyLibrary,
+  firstExperiment,
+  parseLibrary,
+  type Library,
+  type SavedIdea,
+  type Experiment,
+} from "@/lib/library";
 const KEY = "byeolieum-project-v1";
 const stages = ["모으기", "연결하기", "구체화", "프롬프트"];
 const questions: {
@@ -73,10 +84,62 @@ export default function Studio() {
   const [aiMessage, setAiMessage] = useState("");
   const [aiEnabled, setAiEnabled] = useState<boolean | null>(null);
   const [showConnectionPrompt, setShowConnectionPrompt] = useState(false);
+  const [library, setLibrary] = useState<Library>(emptyLibrary);
+  const [libraryReady, setLibraryReady] = useState(false);
+  const [libraryBlocked, setLibraryBlocked] = useState(false);
+  const [libraryError, setLibraryError] = useState("");
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const drawer = useRef<HTMLElement>(null);
   const abort = useRef<AbortController | null>(null);
   const requestId = useRef(0);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      try {
+        const raw = localStorage.getItem(LIBRARY_KEY);
+        if (raw) {
+          const restored = parseLibrary(raw);
+          if (!restored) {
+            setLibraryBlocked(true);
+            setLibraryError(
+              "보관함 기록을 읽지 못했어요. 기존 기록은 덮어쓰지 않았어요. 현재 생각 작업은 계속할 수 있어요.",
+            );
+          } else {
+            setLibrary(restored);
+            setSelectedIdeaId(
+              restored.activeId ?? restored.items[0]?.id ?? null,
+            );
+          }
+        }
+      } catch {
+        setLibraryBlocked(true);
+        setLibraryError(
+          "브라우저 저장을 사용할 수 없어 보관함을 저장하지 못해요.",
+        );
+      }
+      setLibraryReady(true);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  useEffect(() => {
+    if (!libraryReady || libraryBlocked) return;
+    function save() {
+      try {
+        localStorage.setItem(LIBRARY_KEY, JSON.stringify(library));
+      } catch {
+        setLibraryError(
+          "보관함을 브라우저에 저장하지 못했어요. ‘보관함 파일 내려받기’로 기록을 보관해 주세요.",
+        );
+      }
+    }
+    const timer = setTimeout(save, 250);
+    window.addEventListener("pagehide", save);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("pagehide", save);
+    };
+  }, [library, libraryReady, libraryBlocked]);
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       try {
@@ -126,6 +189,19 @@ export default function Studio() {
     };
   }, []);
   const chosen = project.cards.filter((c) => project.selected.includes(c.id));
+  const activeIdea = library.items.find((item) => item.id === library.activeId);
+  const editorDirty =
+    editorOpen &&
+    Boolean(note.trim()) &&
+    (!editId ||
+      note !== project.cards.find((card) => card.id === editId)?.text);
+  const canSaveIdea =
+    ready &&
+    libraryReady &&
+    !libraryBlocked &&
+    !editorDirty &&
+    chosen.length >= 2 &&
+    Boolean(project.brief.title.trim());
   const totalPages = Math.max(1, Math.ceil(project.cards.length / 6));
   const actualPage = Math.min(page, totalPages - 1);
   const visible = project.cards.slice(actualPage * 6, actualPage * 6 + 6);
@@ -349,6 +425,7 @@ export default function Studio() {
     setIdeas([]);
     setAiMessage("");
     update(structuredClone(sampleProject));
+    setLibrary((current) => ({ ...current, activeId: null }));
     setPage(0);
     setNote("");
     setEditId(null);
@@ -377,6 +454,7 @@ export default function Studio() {
     if (!window.confirm("이 브라우저의 카드와 작업을 모두 지울까요?")) return;
     stopIdeas();
     update(structuredClone(emptyProject));
+    setLibrary((current) => ({ ...current, activeId: null }));
     setIdeas([]);
     setAiMessage("");
     setNote("");
@@ -388,7 +466,143 @@ export default function Studio() {
     } catch {
       setStorageError("저장 기록을 삭제했는지 확인할 수 없어요.");
     }
-    setNotice("작업을 초기화했어요.");
+    setNotice("현재 작업을 초기화했어요. 보관함의 아이디어는 유지돼요.");
+  }
+  function saveIdea(openExperiment = false, asNew = false) {
+    if (!canSaveIdea) return;
+    const existing = asNew ? undefined : activeIdea;
+    if (!existing && library.items.length >= MAX_IDEAS) {
+      setLibraryError(
+        "아이디어는 30개까지 보관할 수 있어요. 파일로 내려받고 불필요한 아이디어를 정리해 주세요.",
+      );
+      return;
+    }
+    const id = existing?.id ?? crypto.randomUUID(),
+      now = new Date().toISOString();
+    const item: SavedIdea = {
+      id,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      project: structuredClone(project),
+      experiment:
+        existing?.experiment ?? firstExperiment(project, crypto.randomUUID()),
+    };
+    // Writing before changing views makes save failure visible immediately.
+    const next: Library = {
+      version: 1,
+      activeId: id,
+      items: existing
+        ? library.items.map((i) => (i.id === id ? item : i))
+        : [item, ...library.items],
+    };
+    try {
+      localStorage.setItem(KEY, JSON.stringify(project));
+      localStorage.setItem(LIBRARY_KEY, JSON.stringify(next));
+    } catch {
+      setLibraryError(
+        "아이디어를 저장하지 못했어요. 현재 작업을 유지했어요. 브라우저 저장 공간을 확인해 주세요.",
+      );
+      return;
+    }
+    setLibrary(next);
+    setLibraryError("");
+    setSelectedIdeaId(id);
+    setNotice(
+      "아이디어를 보관했어요. 첫 실험과 결과 기록으로 이어 갈 수 있어요.",
+    );
+    if (openExperiment) {
+      setLibraryOpen(true);
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }
+  }
+  function allowSwitch() {
+    const hasDraft =
+      project.cards.length > 0 ||
+      project.selected.length > 0 ||
+      Object.values(project.brief).some((v) => v.trim()) ||
+      Boolean(project.prompt);
+    if (
+      !editorDirty &&
+      (!hasDraft ||
+        (activeIdea &&
+          JSON.stringify(activeIdea.project) === JSON.stringify(project)))
+    )
+      return true;
+    return window.confirm(
+      "현재 아이디어의 변경 내용을 아직 보관하지 않았어요. 현재 작업을 바꿀까요? 보관함에 저장한 아이디어는 유지돼요.",
+    );
+  }
+  function newIdea() {
+    if (!allowSwitch()) return;
+    stopIdeas();
+    setIdeas([]);
+    setAiMessage("");
+    update({
+      ...structuredClone(emptyProject),
+      cards: project.cards,
+      positions: project.positions,
+    });
+    setLibrary((current) => ({ ...current, activeId: null }));
+    setLibraryOpen(false);
+    setEditorOpen(false);
+    setEditId(null);
+    setNote("");
+    setPage(0);
+    setNotice("생각 카드는 유지하고 새 아이디어를 시작했어요.");
+  }
+  function resumeIdea(item: SavedIdea) {
+    if (!allowSwitch()) return;
+    stopIdeas();
+    setIdeas([]);
+    setAiMessage("");
+    update(structuredClone(item.project));
+    setLibrary((current) => ({ ...current, activeId: item.id }));
+    setLibraryOpen(false);
+    setEditorOpen(false);
+    setEditId(null);
+    setNote("");
+    setPage(0);
+    setNotice(
+      "보관한 아이디어를 불러왔어요. 수정 후 ‘수정본 저장’을 눌러 반영해 주세요.",
+    );
+  }
+  function changeExperiment(id: string, experiment: Experiment) {
+    setLibrary((current) => ({
+      ...current,
+      items: current.items.map((item) =>
+        item.id === id
+          ? { ...item, experiment, updatedAt: new Date().toISOString() }
+          : item,
+      ),
+    }));
+  }
+  function deleteIdea(id: string) {
+    if (
+      !window.confirm(
+        "보관한 아이디어와 실험 기록을 삭제할까요? 현재 생각 작업은 유지돼요.",
+      )
+    )
+      return;
+    setLibrary((current) => ({
+      ...current,
+      activeId: current.activeId === id ? null : current.activeId,
+      items: current.items.filter((item) => item.id !== id),
+    }));
+    setSelectedIdeaId(null);
+    setNotice("보관함에서 아이디어를 삭제했어요.");
+  }
+  function exportLibrary() {
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(library, null, 2)], {
+        type: "application/json",
+      }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `byeolieum-ideas-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setNotice("보관함 파일을 내려받았어요. 아이디어와 실험 기록이 포함돼요.");
   }
   return (
     <div className={`studio-shell stage-${project.step}`}>
@@ -408,7 +622,10 @@ export default function Studio() {
               key={stage}
               disabled={!ready || i > project.step}
               aria-current={project.step === i ? "step" : undefined}
-              onClick={() => go(i)}
+              onClick={() => {
+                setLibraryOpen(false);
+                go(i);
+              }}
             >
               <span>{i < project.step ? "✓" : i + 1}</span>
               {stage}
@@ -419,447 +636,542 @@ export default function Studio() {
           <span className="save-indicator">
             {storageError ? "브라우저 저장 불가" : "이 브라우저에 저장"}
           </span>
+          <button
+            className="secondary compact"
+            disabled={!libraryReady}
+            aria-pressed={libraryOpen}
+            onClick={() => {
+              setLibraryOpen(!libraryOpen);
+              setNotice("");
+            }}
+          >
+            보관함 {library.items.length}
+          </button>
           <button onClick={reset} disabled={!ready} className="quiet-button">
             초기화
           </button>
-          <button className="primary compact" onClick={add} disabled={!ready}>
+          <button
+            className="primary compact"
+            onClick={() => {
+              setLibraryOpen(false);
+              add();
+            }}
+            disabled={!ready}
+          >
             새 생각 ＋
           </button>
         </div>
       </header>
       <main id="studio-workspace" className="studio-main">
-        <div className="studio-heading">
-          <div>
-            <p className="eyebrow">YOUR THOUGHTS, NEW POSSIBILITIES</p>
-            <h1>
-              {project.step < 2
-                ? "작은 생각에서, 새로운 가능성으로."
-                : project.step === 2
-                  ? "아이디어를 한 걸음씩 구체화해요."
-                  : "이제 AI와 첫걸음을 만들어요."}
-            </h1>
-            <p>
-              {project.step < 2
-                ? "카드를 골라 연결해 보세요. 막막한 순간에는 AI가 다른 관점을 제안해요."
-                : "생각의 출발점은 유지하고, 내 상황에 맞게 답을 다듬어 보세요."}
-            </p>
-          </div>
-          <span className="api-state">
-            {aiEnabled
-              ? "OpenAI 연결됨"
-              : aiEnabled === false
-                ? "OpenAI 연결 전"
-                : "AI 연결 확인 중"}
-          </span>
-        </div>
-        <div className="interactive-layout">
-          <section className="canvas-area" aria-label="생각 작업 공간">
-            {ready && chosen.length > 0 && (
-              <div className="connection-controls">
-                <span>생각 {chosen.length}개 연결 중</span>
-                <div>
-                  {project.step >= 2 && (
-                    <button type="button" onClick={() => go(1)}>
-                      연결 다시 고르기
-                    </button>
-                  )}
-                  <button type="button" onClick={disconnect}>
-                    전체 연결 해제
-                  </button>
-                </div>
+        {libraryOpen ? (
+          <IdeaLibrary
+            key={selectedIdeaId ?? library.items[0]?.id ?? "empty"}
+            items={library.items}
+            selectedId={selectedIdeaId}
+            onSelect={setSelectedIdeaId}
+            onResume={resumeIdea}
+            onChange={changeExperiment}
+            onDelete={deleteIdea}
+            onNew={newIdea}
+            onClose={() => setLibraryOpen(false)}
+            onExport={exportLibrary}
+            onCopy={copy}
+            error={libraryError || error || storageError}
+            notice={notice}
+          />
+        ) : (
+          <>
+            <div className="studio-heading">
+              <div>
+                <p className="eyebrow">YOUR THOUGHTS, NEW POSSIBILITIES</p>
+                <h1>
+                  {project.step < 2
+                    ? "작은 생각에서, 새로운 가능성으로."
+                    : project.step === 2
+                      ? "아이디어를 한 걸음씩 구체화해요."
+                      : "이제 AI와 첫걸음을 만들어요."}
+                </h1>
+                <p>
+                  {project.step < 2
+                    ? "카드를 골라 연결해 보세요. 막막한 순간에는 AI가 다른 관점을 제안해요."
+                    : "생각의 출발점은 유지하고, 내 상황에 맞게 답을 다듬어 보세요."}
+                </p>
               </div>
-            )}
-            <div className="canvas-caption">
-              <span>
-                생각 {project.cards.length}개 · 연결 {chosen.length}개
+              <span className="api-state">
+                {aiEnabled
+                  ? "OpenAI 연결됨"
+                  : aiEnabled === false
+                    ? "OpenAI 연결 전"
+                    : "AI 연결 확인 중"}
               </span>
-              <span className="drag-hint">⠿ 드래그 또는 방향키로 이동</span>
-              <span className="touch-hint">카드를 눌러 연결해요</span>
             </div>
-            {!ready ? (
-              <div className="canvas-loading">
-                저장한 생각을 불러오고 있어요…
-              </div>
-            ) : (
-              <Constellation
-                cards={visible}
-                selected={project.selected}
-                positions={project.positions}
-                title={project.brief.title}
-                goal={project.brief.goal}
-                onToggle={toggle}
-                onEdit={edit}
-                onDelete={(id) => {
-                  if (window.confirm("이 생각 카드를 삭제할까요?")) removeCard(id);
-                }}
-                onMove={(id, pos) =>
-                  update({
-                    ...project,
-                    positions: { ...project.positions, [id]: pos },
-                  })
-                }
-                onArrange={() => update({ ...project, positions: {} })}
-                onAdd={add}
-                onConnect={connect}
-              />
-            )}
-            {totalPages > 1 && (
-              <div className="canvas-pagination">
+            <div className="work-actions">
+              <span>
+                {editorDirty
+                  ? "편집 중인 생각 카드를 먼저 저장해 주세요."
+                  : activeIdea
+                    ? `보관한 아이디어 편집 중 · ${activeIdea.project.brief.title}`
+                    : "카드를 연결하고 이름을 붙이면 아이디어를 보관할 수 있어요."}
+              </span>
+              <div>
                 <button
-                  disabled={actualPage === 0}
-                  onClick={() => setPage(actualPage - 1)}
+                  className="secondary"
+                  disabled={!canSaveIdea}
+                  onClick={() => saveIdea()}
                 >
-                  ← 앞 카드
+                  {activeIdea ? "수정본 저장" : "아이디어 저장"}
                 </button>
-                <span>
-                  {actualPage + 1} / {totalPages} · 한 화면에 6개씩
-                </span>
+                {activeIdea && (
+                  <button
+                    className="secondary"
+                    disabled={!canSaveIdea}
+                    onClick={() => saveIdea(false, true)}
+                  >
+                    다른 아이디어로 저장
+                  </button>
+                )}
                 <button
-                  disabled={actualPage === totalPages - 1}
-                  onClick={() => setPage(actualPage + 1)}
+                  className="quiet-button"
+                  onClick={newIdea}
+                  disabled={!ready || !libraryReady}
                 >
-                  뒤 카드 →
+                  새 아이디어 시작
                 </button>
               </div>
-            )}
-            <div className="canvas-footnote">
-              <span>직접 연결 · 기본 기능은 API 없이</span>
-              <span>모바일에서도 선택으로 연결할 수 있어요.</span>
             </div>
-          </section>
-          <aside
-            className="idea-drawer"
-            ref={drawer}
-            aria-label="아이디어 만들기"
-            aria-busy={!ready}
-          >
-            <div className="drawer-header">
-              <p className="eyebrow">
-                {editorOpen ? "THOUGHT NOTE" : `STEP 0${project.step + 1}`}
+            {libraryError && (
+              <p className="error" role="alert">
+                {libraryError}
               </p>
-              <h2 ref={heading} tabIndex={-1}>
-                {editorOpen
-                  ? editId
-                    ? "생각 카드 수정"
-                    : "새 생각 남기기"
-                  : project.step === 0
-                    ? "첫 번째 생각을 남겨요"
-                    : project.step === 1
-                      ? "이 연결로 무엇을 만들까요?"
-                      : project.step === 2
-                        ? "조금씩 선명해지는 아이디어"
-                        : "내 아이디어의 제작 프롬프트"}
-              </h2>
-            </div>
-            {ready && (editorOpen || project.step === 0) ? (
-              <>
-                <p className="drawer-description">
-                  고민, 발견, 해 보고 싶은 일. 정리되지 않아도 괜찮아요.
-                </p>
-                <form onSubmit={saveNote} className="note-form">
-                  <label htmlFor="note">
-                    {editId ? "생각 카드 수정" : "새로운 생각"}
-                  </label>
-                  <textarea
-                    id="note"
-                    value={note}
-                    maxLength={500}
-                    rows={5}
-                    placeholder="예: 교육생들이 질문하기 어려워해요."
-                    onChange={(e) => setNote(e.target.value)}
-                  />
-                  <div className="form-bottom">
-                    <small>{note.length}/500</small>
-                    <button className="primary" type="submit">
-                      {editId ? "수정 저장" : "카드 추가 ＋"}
-                    </button>
-                  </div>
-                </form>
-                {editId && (
-                  <button className="danger-button" onClick={() => removeCard()}>
-                    이 카드 삭제
-                  </button>
-                )}
-                {editorOpen ? (
-                  <button
-                    className="secondary full"
-                    onClick={() => {
-                      setEditorOpen(false);
-                      setEditId(null);
-                      setNote("");
-                    }}
-                  >
-                    작업으로 돌아가기
-                  </button>
-                ) : (
-                  <>
-                    <button className="secondary full" onClick={sample}>
-                      예제로 체험하기 ↗
-                    </button>
-                    <button className="primary full" onClick={connect}>
-                      생각 연결하기 →
-                    </button>
-                  </>
-                )}
-              </>
-            ) : ready && project.step === 1 ? (
-              <>
-                <p className="drawer-description">
-                  생각을 한데 놓았는데 아이디어가 떠오르지 않나요? AI에게 연결의
-                  실마리를 물어볼 수 있어요.
-                </p>
-                <div className="source-chips" aria-label="연결한 생각">
-                  {chosen.length ? (
-                    chosen.map((c, i) => (
-                      <div key={c.id}>
-                        <span>{i + 1}</span>
-                        <p>{c.text}</p>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="small-muted">카드 2~5개를 골라 주세요.</p>
-                  )}
-                </div>
-                <div className="ai-action">
-                  <button
-                    className="primary full"
-                    disabled={aiBusy || chosen.length < 2}
-                    onClick={askIdeas}
-                  >
-                    {aiBusy ? (
-                      <>
-                        <span className="spinner" />
-                        가능성을 찾고 있어요…
-                      </>
-                    ) : (
-                      "✦ AI 아이디어 3개 제안받기"
-                    )}
-                  </button>
-                  <p>
-                    선택한 카드만 OpenAI에 전송돼요. 개인정보는 빼 주세요.
-                    요청에 따라 API 비용이 발생할 수 있어요.
-                  </p>
-                  {aiBusy && (
-                    <button
-                      className="quiet-button"
-                      onClick={() => {
-                        stopIdeas();
-                        setAiMessage("제안 요청을 취소했어요.");
-                      }}
-                    >
-                      요청 취소
-                    </button>
-                  )}
-                </div>
-                {aiMessage && (
-                  <p className="ai-message" role="status">
-                    {aiMessage}
-                  </p>
-                )}
-                <div className="idea-candidates">
-                  {ideas.map((idea, i) => (
-                    <article
-                      className="idea-candidate"
-                      key={`${idea.title}-${i}`}
-                    >
-                      <small>가능성 0{i + 1}</small>
-                      <h3>{idea.title}</h3>
-                      <p>{idea.goal}</p>
-                      <details>
-                        <summary>연결 근거 확인</summary>
-                        <p>{idea.reason}</p>
-                        <ul>
-                          {idea.sourceIds.map((id) => (
-                            <li key={id}>
-                              {project.cards.find((c) => c.id === id)?.text}
-                            </li>
-                          ))}
-                        </ul>
-                        <p className="small-muted">
-                          가설이에요. 내 상황에 맞는지 직접 확인하세요.
-                        </p>
-                      </details>
-                      <button
-                        className="secondary full"
-                        onClick={() => adopt(idea)}
-                      >
-                        이 아이디어 선택
+            )}
+            <div className="interactive-layout">
+              <section className="canvas-area" aria-label="생각 작업 공간">
+                {ready && chosen.length > 0 && (
+                  <div className="connection-controls">
+                    <span>생각 {chosen.length}개 연결 중</span>
+                    <div>
+                      {project.step >= 2 && (
+                        <button type="button" onClick={() => go(1)}>
+                          연결 다시 고르기
+                        </button>
+                      )}
+                      <button type="button" onClick={disconnect}>
+                        전체 연결 해제
                       </button>
-                    </article>
-                  ))}
-                </div>
-                {project.idea && (
-                  <div className="adopted-idea">
-                    <small>선택한 가능성</small>
-                    <strong>{project.idea.title}</strong>
-                    <p>{project.idea.reason}</p>
+                    </div>
                   </div>
                 )}
-                <button
-                  className="secondary full"
-                  disabled={chosen.length < 2}
-                  onClick={startBrief}
-                >
-                  {project.idea
-                    ? "이 아이디어 구체화 →"
-                    : "직접 아이디어 정하기 →"}
-                </button>
-                <button
-                  className="quiet-button full"
-                  disabled={chosen.length < 2}
-                  onClick={() => setShowConnectionPrompt(!showConnectionPrompt)}
-                >
-                  다른 AI에서 아이디어 찾기 {showConnectionPrompt ? "−" : "＋"}
-                </button>
-                {showConnectionPrompt && (
-                  <div className="external-prompt">
-                    <label htmlFor="connection-prompt">
-                      아이디어 연결 프롬프트
-                    </label>
-                    <textarea
-                      id="connection-prompt"
-                      readOnly
-                      value={buildIdeationPrompt(chosen)}
-                      rows={7}
-                    />
-                    <button
-                      className="secondary full"
-                      onClick={() =>
-                        copy(buildIdeationPrompt(chosen), "연결 프롬프트")
-                      }
-                    >
-                      연결 프롬프트 복사
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : ready && project.step === 2 ? (
-              <>
-                <div className="question-progress">
-                  <span>{project.question + 1} / 5</span>
-                  <div>
-                    {questions.map((q, i) => (
-                      <span
-                        key={q.key}
-                        className={i <= project.question ? "filled" : ""}
-                      />
-                    ))}
-                  </div>
+                <div className="canvas-caption">
+                  <span>
+                    생각 {project.cards.length}개 · 연결 {chosen.length}개
+                  </span>
+                  <span className="drag-hint">⠿ 드래그 또는 방향키로 이동</span>
+                  <span className="touch-hint">카드를 눌러 연결해요</span>
                 </div>
-                <form
-                  key={question.key}
-                  onSubmit={advanceQuestion}
-                  className="question-form"
-                >
-                  <label htmlFor={question.key}>{question.label}</label>
-                  <p>{question.help}</p>
-                  <textarea
-                    autoComplete="off"
-                    id={question.key}
-                    rows={5}
-                    maxLength={1000}
-                    value={project.brief[question.key]}
-                    placeholder={question.example}
-                    onChange={(e) =>
+                {!ready ? (
+                  <div className="canvas-loading">
+                    저장한 생각을 불러오고 있어요…
+                  </div>
+                ) : (
+                  <Constellation
+                    cards={visible}
+                    selected={project.selected}
+                    positions={project.positions}
+                    title={project.brief.title}
+                    goal={project.brief.goal}
+                    onToggle={toggle}
+                    onEdit={edit}
+                    onDelete={(id) => {
+                      if (window.confirm("이 생각 카드를 삭제할까요?"))
+                        removeCard(id);
+                    }}
+                    onMove={(id, pos) =>
                       update({
                         ...project,
-                        brief: {
-                          ...project.brief,
-                          [question.key]: e.target.value,
-                        },
+                        positions: { ...project.positions, [id]: pos },
                       })
                     }
+                    onArrange={() => update({ ...project, positions: {} })}
+                    onAdd={add}
+                    onConnect={connect}
                   />
-                  <div className="question-actions">
+                )}
+                {totalPages > 1 && (
+                  <div className="canvas-pagination">
                     <button
-                      type="button"
-                      className="secondary"
-                      onClick={previous}
+                      disabled={actualPage === 0}
+                      onClick={() => setPage(actualPage - 1)}
                     >
-                      ← 이전
+                      ← 앞 카드
                     </button>
-                    <button type="submit" className="primary">
-                      {project.question < 4
-                        ? "다음 질문 →"
-                        : "프롬프트 만들기 ✦"}
+                    <span>
+                      {actualPage + 1} / {totalPages} · 한 화면에 6개씩
+                    </span>
+                    <button
+                      disabled={actualPage === totalPages - 1}
+                      onClick={() => setPage(actualPage + 1)}
+                    >
+                      뒤 카드 →
                     </button>
                   </div>
-                </form>
-                <details className="source-details" open>
-                  <summary>아이디어의 출발점 · 생각 {chosen.length}개</summary>
-                  <div className="source-chips">
-                    {chosen.map((c, i) => (
-                      <div key={c.id}>
-                        <span>{i + 1}</span>
-                        <p>{c.text}</p>
+                )}
+                <div className="canvas-footnote">
+                  <span>직접 연결 · 기본 기능은 API 없이</span>
+                  <span>모바일에서도 선택으로 연결할 수 있어요.</span>
+                </div>
+              </section>
+              <aside
+                className="idea-drawer"
+                ref={drawer}
+                aria-label="아이디어 만들기"
+                aria-busy={!ready}
+              >
+                <div className="drawer-header">
+                  <p className="eyebrow">
+                    {editorOpen ? "THOUGHT NOTE" : `STEP 0${project.step + 1}`}
+                  </p>
+                  <h2 ref={heading} tabIndex={-1}>
+                    {editorOpen
+                      ? editId
+                        ? "생각 카드 수정"
+                        : "새 생각 남기기"
+                      : project.step === 0
+                        ? "첫 번째 생각을 남겨요"
+                        : project.step === 1
+                          ? "이 연결로 무엇을 만들까요?"
+                          : project.step === 2
+                            ? "조금씩 선명해지는 아이디어"
+                            : "내 아이디어의 제작 프롬프트"}
+                  </h2>
+                </div>
+                {ready && (editorOpen || project.step === 0) ? (
+                  <>
+                    <p className="drawer-description">
+                      고민, 발견, 해 보고 싶은 일. 정리되지 않아도 괜찮아요.
+                    </p>
+                    <form onSubmit={saveNote} className="note-form">
+                      <label htmlFor="note">
+                        {editId ? "생각 카드 수정" : "새로운 생각"}
+                      </label>
+                      <textarea
+                        id="note"
+                        value={note}
+                        maxLength={500}
+                        rows={5}
+                        placeholder="예: 교육생들이 질문하기 어려워해요."
+                        onChange={(e) => setNote(e.target.value)}
+                      />
+                      <div className="form-bottom">
+                        <small>{note.length}/500</small>
+                        <button className="primary" type="submit">
+                          {editId ? "수정 저장" : "카드 추가 ＋"}
+                        </button>
                       </div>
-                    ))}
-                  </div>
-                </details>
-                {project.idea && (
-                  <p className="small-muted">
-                    AI의 초안이에요. 답을 내 상황에 맞게 바꿔 주세요.
+                    </form>
+                    {editId && (
+                      <button
+                        className="danger-button"
+                        onClick={() => removeCard()}
+                      >
+                        이 카드 삭제
+                      </button>
+                    )}
+                    {editorOpen ? (
+                      <button
+                        className="secondary full"
+                        onClick={() => {
+                          setEditorOpen(false);
+                          setEditId(null);
+                          setNote("");
+                        }}
+                      >
+                        작업으로 돌아가기
+                      </button>
+                    ) : (
+                      <>
+                        <button className="secondary full" onClick={sample}>
+                          예제로 체험하기 ↗
+                        </button>
+                        <button className="primary full" onClick={connect}>
+                          생각 연결하기 →
+                        </button>
+                      </>
+                    )}
+                  </>
+                ) : ready && project.step === 1 ? (
+                  <>
+                    <p className="drawer-description">
+                      생각을 한데 놓았는데 아이디어가 떠오르지 않나요? AI에게
+                      연결의 실마리를 물어볼 수 있어요.
+                    </p>
+                    <div className="source-chips" aria-label="연결한 생각">
+                      {chosen.length ? (
+                        chosen.map((c, i) => (
+                          <div key={c.id}>
+                            <span>{i + 1}</span>
+                            <p>{c.text}</p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="small-muted">카드 2~5개를 골라 주세요.</p>
+                      )}
+                    </div>
+                    <div className="ai-action">
+                      <button
+                        className="primary full"
+                        disabled={aiBusy || chosen.length < 2}
+                        onClick={askIdeas}
+                      >
+                        {aiBusy ? (
+                          <>
+                            <span className="spinner" />
+                            가능성을 찾고 있어요…
+                          </>
+                        ) : (
+                          "✦ AI 아이디어 3개 제안받기"
+                        )}
+                      </button>
+                      <p>
+                        선택한 카드만 OpenAI에 전송돼요. 개인정보는 빼 주세요.
+                        요청에 따라 API 비용이 발생할 수 있어요.
+                      </p>
+                      {aiBusy && (
+                        <button
+                          className="quiet-button"
+                          onClick={() => {
+                            stopIdeas();
+                            setAiMessage("제안 요청을 취소했어요.");
+                          }}
+                        >
+                          요청 취소
+                        </button>
+                      )}
+                    </div>
+                    {aiMessage && (
+                      <p className="ai-message" role="status">
+                        {aiMessage}
+                      </p>
+                    )}
+                    <div className="idea-candidates">
+                      {ideas.map((idea, i) => (
+                        <article
+                          className="idea-candidate"
+                          key={`${idea.title}-${i}`}
+                        >
+                          <small>가능성 0{i + 1}</small>
+                          <h3>{idea.title}</h3>
+                          <p>{idea.goal}</p>
+                          <details>
+                            <summary>연결 근거 확인</summary>
+                            <p>{idea.reason}</p>
+                            <ul>
+                              {idea.sourceIds.map((id) => (
+                                <li key={id}>
+                                  {project.cards.find((c) => c.id === id)?.text}
+                                </li>
+                              ))}
+                            </ul>
+                            <p className="small-muted">
+                              가설이에요. 내 상황에 맞는지 직접 확인하세요.
+                            </p>
+                          </details>
+                          <button
+                            className="secondary full"
+                            onClick={() => adopt(idea)}
+                          >
+                            이 아이디어 선택
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                    {project.idea && (
+                      <div className="adopted-idea">
+                        <small>선택한 가능성</small>
+                        <strong>{project.idea.title}</strong>
+                        <p>{project.idea.reason}</p>
+                      </div>
+                    )}
+                    <button
+                      className="secondary full"
+                      disabled={chosen.length < 2}
+                      onClick={startBrief}
+                    >
+                      {project.idea
+                        ? "이 아이디어 구체화 →"
+                        : "직접 아이디어 정하기 →"}
+                    </button>
+                    <button
+                      className="quiet-button full"
+                      disabled={chosen.length < 2}
+                      onClick={() =>
+                        setShowConnectionPrompt(!showConnectionPrompt)
+                      }
+                    >
+                      다른 AI에서 아이디어 찾기{" "}
+                      {showConnectionPrompt ? "−" : "＋"}
+                    </button>
+                    {showConnectionPrompt && (
+                      <div className="external-prompt">
+                        <label htmlFor="connection-prompt">
+                          아이디어 연결 프롬프트
+                        </label>
+                        <textarea
+                          id="connection-prompt"
+                          readOnly
+                          value={buildIdeationPrompt(chosen)}
+                          rows={7}
+                        />
+                        <button
+                          className="secondary full"
+                          onClick={() =>
+                            copy(buildIdeationPrompt(chosen), "연결 프롬프트")
+                          }
+                        >
+                          연결 프롬프트 복사
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : ready && project.step === 2 ? (
+                  <>
+                    <div className="question-progress">
+                      <span>{project.question + 1} / 5</span>
+                      <div>
+                        {questions.map((q, i) => (
+                          <span
+                            key={q.key}
+                            className={i <= project.question ? "filled" : ""}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <form
+                      key={question.key}
+                      onSubmit={advanceQuestion}
+                      className="question-form"
+                    >
+                      <label htmlFor={question.key}>{question.label}</label>
+                      <p>{question.help}</p>
+                      <textarea
+                        autoComplete="off"
+                        id={question.key}
+                        rows={5}
+                        maxLength={1000}
+                        value={project.brief[question.key]}
+                        placeholder={question.example}
+                        onChange={(e) =>
+                          update({
+                            ...project,
+                            brief: {
+                              ...project.brief,
+                              [question.key]: e.target.value,
+                            },
+                          })
+                        }
+                      />
+                      <div className="question-actions">
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={previous}
+                        >
+                          ← 이전
+                        </button>
+                        <button type="submit" className="primary">
+                          {project.question < 4
+                            ? "다음 질문 →"
+                            : "프롬프트 만들기 ✦"}
+                        </button>
+                      </div>
+                    </form>
+                    <details className="source-details" open>
+                      <summary>
+                        아이디어의 출발점 · 생각 {chosen.length}개
+                      </summary>
+                      <div className="source-chips">
+                        {chosen.map((c, i) => (
+                          <div key={c.id}>
+                            <span>{i + 1}</span>
+                            <p>{c.text}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                    {project.idea && (
+                      <p className="small-muted">
+                        AI의 초안이에요. 답을 내 상황에 맞게 바꿔 주세요.
+                      </p>
+                    )}
+                    {project.prompt && (
+                      <p className="small-muted">
+                        다시 생성하면 이전에 편집한 프롬프트를 새 결과로 바꿔요.
+                      </p>
+                    )}
+                  </>
+                ) : ready && project.step === 3 ? (
+                  <>
+                    <div className="prompt-summary">
+                      <strong>{project.brief.title}</strong>
+                      <p>
+                        생각 {chosen.length}개 → 아이디어 → 핵심 기능 → 확인
+                        기준
+                      </p>
+                    </div>
+                    <label htmlFor="prompt">AI에 전달할 제작 프롬프트</label>
+                    <textarea
+                      id="prompt"
+                      className="prompt"
+                      value={project.prompt}
+                      maxLength={20000}
+                      rows={14}
+                      onChange={(e) =>
+                        update({ ...project, prompt: e.target.value })
+                      }
+                    />
+                    <button
+                      className="primary full"
+                      disabled={!project.prompt.trim()}
+                      onClick={() => copy(project.prompt, "제작 프롬프트")}
+                    >
+                      프롬프트 복사 ↗
+                    </button>
+                    <button className="secondary full" onClick={() => go(2)}>
+                      ← 아이디어 다듬기
+                    </button>
+                    <div className="next-experiment">
+                      <strong>만들고, 직접 확인해요.</strong>
+                      <p>
+                        원하는 AI에 붙여 넣어 구현한 뒤 완료 기준대로 테스트해
+                        보세요. 예상과 다른 결과는 수정 요청에 구체적으로
+                        적어요.
+                      </p>
+                      <button
+                        className="primary full"
+                        disabled={!canSaveIdea}
+                        onClick={() => saveIdea(true)}
+                      >
+                        저장하고 첫 실험 만들기 →
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+                {error && (
+                  <p className="error" role="alert">
+                    {error}
                   </p>
                 )}
-                {project.prompt && (
-                  <p className="small-muted">
-                    다시 생성하면 이전에 편집한 프롬프트를 새 결과로 바꿔요.
+                <p className="notice" role="status">
+                  {notice}
+                </p>
+                {storageError && (
+                  <p className="error" role="alert">
+                    {storageError}
                   </p>
                 )}
-              </>
-            ) : ready && project.step === 3 ? (
-              <>
-                <div className="prompt-summary">
-                  <strong>{project.brief.title}</strong>
-                  <p>
-                    생각 {chosen.length}개 → 아이디어 → 핵심 기능 → 확인 기준
-                  </p>
-                </div>
-                <label htmlFor="prompt">AI에 전달할 제작 프롬프트</label>
-                <textarea
-                  id="prompt"
-                  className="prompt"
-                  value={project.prompt}
-                  maxLength={20000}
-                  rows={14}
-                  onChange={(e) =>
-                    update({ ...project, prompt: e.target.value })
-                  }
-                />
-                <button
-                  className="primary full"
-                  disabled={!project.prompt.trim()}
-                  onClick={() => copy(project.prompt, "제작 프롬프트")}
-                >
-                  프롬프트 복사 ↗
-                </button>
-                <button className="secondary full" onClick={() => go(2)}>
-                  ← 아이디어 다듬기
-                </button>
-                <div className="next-experiment">
-                  <strong>만들고, 직접 확인해요.</strong>
-                  <p>
-                    원하는 AI에 붙여 넣어 구현한 뒤 완료 기준대로 테스트해
-                    보세요. 예상과 다른 결과는 수정 요청에 구체적으로 적어요.
-                  </p>
-                </div>
-              </>
-            ) : null}
-            {error && (
-              <p className="error" role="alert">
-                {error}
-              </p>
-            )}
-            <p className="notice" role="status">
-              {notice}
-            </p>
-            {storageError && (
-              <p className="error" role="alert">
-                {storageError}
-              </p>
-            )}
-          </aside>
-        </div>
+              </aside>
+            </div>
+          </>
+        )}
         <footer className="studio-footer">
           <span>별이음 · ByeolIeum</span>
           <span>흩어진 생각을 이어, 나만의 그림으로.</span>
