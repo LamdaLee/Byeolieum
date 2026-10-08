@@ -9,7 +9,12 @@ function reply(message: string, status: number) {
 export async function GET() {
   await connection();
   return Response.json(
-    { enabled: Boolean(process.env.BYEOLIEUM_AI_API_KEY), provider: "OpenAI" },
+    {
+      enabled: Boolean(
+        process.env.BYEOLIEUM_AI_API_KEY || process.env.OPENAI_API_KEY,
+      ),
+      provider: "OpenAI",
+    },
     { headers },
   );
 }
@@ -65,7 +70,7 @@ export async function POST(request: Request) {
   const cards = parseIdeaCards(payload?.cards);
   if (!cards)
     return reply("내용이 있는 서로 다른 생각 카드 2~5개를 골라 주세요.", 400);
-  const key = process.env.BYEOLIEUM_AI_API_KEY;
+  const key = process.env.BYEOLIEUM_AI_API_KEY || process.env.OPENAI_API_KEY;
   if (!key)
     return reply(
       "OpenAI가 아직 연결되지 않았어요. 직접 아이디어를 적거나 연결 프롬프트를 복사해 다른 AI에서 사용해 보세요.",

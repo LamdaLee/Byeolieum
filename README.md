@@ -38,7 +38,7 @@ Next.js 16.4, React 19.3, TypeScript, Tailwind CSS 4. 그래프 라이브러리�
 
 Vercel → 프로젝트 byeolieum → Settings → Environment Variables:
 
-- `BYEOLIEUM_AI_API_KEY`: OpenAI 프로젝트 API 키. Production에 등록하고 재배포합니다.
+- `BYEOLIEUM_AI_API_KEY`: OpenAI 프로젝트 API 키. 일반적인 `OPENAI_API_KEY` 이름도 지원하며 둘 다 있으면 별이음 전용 키를 우선합니다. Production에 등록하고 재배포합니다.
 - `BYEOLIEUM_AI_MODEL`: 선택. 기본 `gpt-4.1-mini`. Chat Completions와 strict JSON schema를 지원하는 모델을 사용합니다.
 
 로컬에서는 `.env.local`에 같은 이름을 설정하고 서버를 재시작합니다. 관리형 클라우드의 Node.js 24에서는 `NODE_USE_ENV_PROXY=1`을 설정해 환경 프록시를 사용합니다. 키를 Git이나 채팅에 공유하지 마세요. `NEXT_PUBLIC_` 접두사는 사용하지 않습니다.
