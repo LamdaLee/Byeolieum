@@ -218,11 +218,18 @@ export default function Studio() {
     }
     update({
       ...project,
-      step: project.step === 0 ? 1 : project.step,
+      step: 1,
+      question: project.step >= 2 ? 0 : project.question,
+      prompt: "",
       selected: project.selected.includes(id)
         ? project.selected.filter((x) => x !== id)
         : [...project.selected, id],
     });
+  }
+  function disconnect() {
+    update({ ...project, selected: [], step: 1, question: 0, prompt: "" });
+    setNotice("연결을 모두 해제했어요. 생각 카드와 작성한 내용은 유지돼요.");
+    setEditorOpen(false);
   }
   function connect() {
     if (project.cards.length < 2) {
@@ -447,6 +454,21 @@ export default function Studio() {
         </div>
         <div className="interactive-layout">
           <section className="canvas-area" aria-label="생각 작업 공간">
+            {ready && chosen.length > 0 && (
+              <div className="connection-controls">
+                <span>생각 {chosen.length}개 연결 중</span>
+                <div>
+                  {project.step >= 2 && (
+                    <button type="button" onClick={() => go(1)}>
+                      연결 다시 고르기
+                    </button>
+                  )}
+                  <button type="button" onClick={disconnect}>
+                    전체 연결 해제
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="canvas-caption">
               <span>
                 생각 {project.cards.length}개 · 연결 {chosen.length}개
@@ -460,7 +482,6 @@ export default function Studio() {
               </div>
             ) : (
               <Constellation
-                locked={project.step >= 2}
                 cards={visible}
                 selected={project.selected}
                 positions={project.positions}

@@ -381,6 +381,30 @@ button.secondary:not(:disabled):hover {
 .card-delete {
   display: none;
 }
+.connection-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: #6145ba;
+}
+.connection-controls > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.connection-controls button {
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f4effb;
+  color: #6145ba;
+  font-size: 12px;
+}
 .canvas-card > p {
   font-size: 13px;
   line-height: 1.7;
@@ -986,11 +1010,13 @@ button.secondary:not(:disabled):hover {
   .stage-nav {
     order: 3;
     flex-basis: 100%;
+    min-width: 0;
     justify-content: center;
     margin-top: 5px;
   }
   .stage-nav button {
     flex: 1;
+    min-width: 0;
     justify-content: center;
     padding: 8px;
   }
@@ -1289,7 +1315,8 @@ button.secondary:not(:disabled):hover {
   }
   .stage-nav button {
     font-size: 11px;
-    gap: 6px;
+    flex-direction: column;
+    gap: 4px;
   }
   .source-chips p {
     font-size: 12px;

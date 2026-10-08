@@ -22,7 +22,6 @@ function wire(pos: Position) {
   return `M ${x} ${y} C ${(x + 500) / 2} ${y}, ${(x + 500) / 2} 322, 500 322`;
 }
 type Props = {
-  locked: boolean;
   cards: Card[];
   selected: string[];
   positions: Record<string, Position>;
@@ -37,7 +36,6 @@ type Props = {
   onConnect: () => void;
 };
 export default memo(function Constellation({
-  locked,
   cards,
   selected,
   positions,
@@ -259,13 +257,12 @@ export default memo(function Constellation({
               <button
                 type="button"
                 className="card-select"
-                disabled={locked}
                 aria-pressed={active}
                 aria-label={`${active ? "선택 해제" : "생각 선택"}: ${card.text}`}
                 onClick={() => onToggle(card.id)}
               >
                 <span>{active ? "✓" : "＋"}</span>
-                {active ? "연결한 생각" : "이 생각 연결하기"}
+                {active ? "연결 해제" : "이 생각 연결하기"}
               </button>
               <button
                 type="button"
