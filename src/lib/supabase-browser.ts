@@ -36,12 +36,15 @@ export async function getLoginProviders(
   });
   if (!response.ok) throw new Error("Cannot load login providers");
   const settings = await response.json();
+  const kakao = await fetch("/api/auth/kakao/status", { signal })
+    .then((r) => (r.ok ? r.json() : { enabled: false }))
+    .catch(() => ({ enabled: false }));
   const naver = await fetch("/api/auth/naver/status", { signal })
     .then((r) => (r.ok ? r.json() : { enabled: false }))
     .catch(() => ({ enabled: false }));
   return {
     naver: naver.enabled === true,
     google: settings.external?.google === true,
-    kakao: settings.external?.kakao === true,
+    kakao: kakao.enabled === true,
   };
 }

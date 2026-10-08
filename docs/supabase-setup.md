@@ -9,7 +9,7 @@ Production에 아래 두 항목을 등록하고 재배포합니다. 클라이언
 - `NEXT_PUBLIC_SUPABASE_URL`: Supabase Project URL.
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`: 프로젝트 Publishable key. 기존 `NEXT_PUBLIC_SUPABASE_ANON_KEY` 이름도 지원합니다.
 
-Service role/secret key는 이 환경변수에 넣지 않습니다. 구글·카카오 Client Secret은 Supabase 제공자 설정에만 넣습니다.
+Service role/secret key는 이 환경변수에 넣지 않습니다. 구글 Client Secret은 Supabase 제공자 설정에 넣습니다. 카카오·네이버 Client Secret은 Vercel 서버 설정에 넣습니다.
 
 ## 2. 데이터베이스
 
@@ -38,14 +38,20 @@ Vercel Preview에서 실제 로그인을 검사하려면 해당 Preview URL을 �
 4. Supabase → Authentication → Sign In / Providers → Google에서 Client ID와 Client Secret을 등록하고 활성화합니다.
 5. Google 앱이 테스트 상태라면 사용할 계정을 테스트 사용자로 등록하고, 공개 운영 전 동의 화면을 배포 상태에 맞게 설정합니다.
 
-## 5. Kakao
+## 5. Kakao — 이메일·프로필 동의 없는 로그인
 
-1. Kakao Developers에서 앱을 만들고 Web 플랫폼에 `https://byeolieum.com`을 등록합니다.
-2. 카카오 로그인 활성화, Redirect URI에 **같은 Supabase `/auth/v1/callback` 주소**를 등록합니다.
-3. Supabase Kakao 제공자가 요구하는 동의 항목을 앱에 설정합니다. 이메일 동의 권한은 카카오 앱의 제공 가능 범위를 확인합니다.
-4. Client Secret을 활성화하고, Supabase Kakao 제공자 설정에 REST API 키(Client ID)와 Client Secret을 등록해 활성화합니다.
+Supabase 기본 Kakao 제공자는 이메일·프로필 사진·닉네임 scope를 고정 요청하고 이메일이 없는 인증을 거부합니다. 별이음은 이 경로를 사용하지 않고 네이버와 같은 서버 연결로 Supabase 세션을 발급합니다.
 
-앱의 로그인 버튼은 `/auth/v1/settings`에서 확인한 활성화 상태를 사용합니다. 제공자 설정 전에는 해당 버튼이 ‘연결 준비 중’으로 표시됩니다. API 호출을 위한 access token이나 Client Secret을 앱 코드에 직접 넣지 않습니다.
+1. Kakao Developers 앱의 Web 플랫폼에 `https://byeolieum.com`을 등록합니다.
+2. 카카오 로그인을 활성화하고 Redirect URI에 **`https://byeolieum.com/api/auth/kakao/callback`**을 추가합니다. 기존 Supabase 콜백과 다른 주소입니다.
+3. 카카오 동의 항목에서 이메일(`account_email`), 프로필 사진(`profile_image`), 닉네임(`profile_nickname`)을 **사용 안 함**으로 둡니다. 이미 활성화했다면 필수 동의 설정도 제거합니다.
+4. Vercel Production에 `KAKAO_CLIENT_ID` = **REST API 키**, `KAKAO_CLIENT_SECRET` = 카카오 로그인 Client Secret을 등록합니다. Client Secret을 활성화하지 않은 앱은 해당 변수를 생략할 수 있습니다. 관리자 키는 아닙니다. 기존 `SUPABASE_SERVICE_ROLE_KEY` 또는 `SUPABASE_SECRET_KEY`를 재사용합니다.
+5. Supabase SQL Editor에서 [카카오 마이그레이션](../supabase/migrations/202610080003_kakao_bridge.sql)을 한 번 실행합니다. 기존 계정/네이버 SQL은 다시 실행하지 않습니다.
+6. 환경변수 변경 후 재배포합니다. Supabase의 Email 인증은 서버 세션 발급을 위해 활성화 상태로 유지하되 사용자에게 인증 메일을 보내지 않습니다. Supabase Kakao 제공자의 활성화 여부는 새 버튼에 영향을 주지 않으며 기본 Kakao 제공자는 비활성화해도 됩니다.
+
+카카오 authorize 요청에는 scope를 넣지 않습니다. 회원 정보 요청은 `property_keys=[]`로 프로필/계정 정보를 제외하고 응답의 회원 ID만 사용합니다. 개인 정보를 Supabase 사용자 메타데이터에 복사하지 않고 화면에는 ‘카카오 계정’으로 표시합니다. 내부 이메일은 비공개 회원 ID 매핑과 인증 세션 생성에만 사용합니다. 네이버와 동일한 state, 암호화된 60초 일회용 세션 전달, HttpOnly 쿠키, 동일 출처 검증과 사용자 RLS를 적용합니다.
+
+기존 Supabase 기본 카카오 계정과 새 ID 전용 계정은 자동 연결하지 않습니다. 이전 방식으로 저장한 기록이 있다면 전환 전에 파일로 보관해야 합니다. 현재 카카오 기본 로그인에서 동의 오류로 가입하지 못한 경우에는 기존 카카오 기록이 없습니다.
 
 ## 6. Naver
 
@@ -72,9 +78,9 @@ OAuth state 검증 후 세션은 암호화한 60초 일회용 레코드에 저�
 
 ## 검증 범위
 
-브라우저 자동 검사는 소셜 인증과 Supabase 응답을 대체하는 테스트 fixture를 사용합니다. 실제 Google/Kakao/Naver 동의 화면과 실프로젝트 인증은 제공자 등록 후 확인해야 합니다. RLS와 revision 충돌은 실제 로컬 PostgreSQL 17에서 별도 검사합니다. `tests/cloud-rls-bootstrap.sql`은 로컬 테스트 컨테이너 전용이며 실프로젝트에 실행하지 않습니다.
+브라우저 자동 검사는 소셜 인증과 Supabase 응답을 대체하는 테스트 fixture를 사용합니다. 실제 Google/Kakao/Naver 인증 화면과 실프로젝트 인증은 제공자 등록 후 확인해야 합니다. RLS와 revision 충돌은 실제 로컬 PostgreSQL 17에서 별도 검사합니다. `tests/cloud-rls-bootstrap.sql`은 로컬 테스트 컨테이너 전용이며 실프로젝트에 실행하지 않습니다.
 
 ## 로그인 연결 문제 확인
 
-- Google/Kakao가 ‘연결 준비 중’이면 Authentication → Sign In / Providers에서 해당 제공자를 Enabled로 켜고 Client ID/Secret을 등록합니다. Vercel에 Supabase 키만 등록하는 것으로 제공자가 켜지지는 않습니다. 이미 활성화했다면 Vercel의 공개 Supabase URL/키가 같은 프로젝트인지 확인합니다.
+- Google이 ‘연결 준비 중’이면 Authentication → Sign In / Providers에서 Google을 Enabled로 켜고 Client ID/Secret을 등록합니다. Kakao/Naver가 ‘연결 준비 중’이면 Vercel 서버 키를 확인하고 재배포합니다. Vercel에 Supabase 키만 등록하는 것으로 제공자가 켜지지는 않습니다. 이미 활성화했다면 Vercel의 공개 Supabase URL/키가 같은 프로젝트인지 확인합니다.
 - Naver 시작 경로는 프록시의 Host 헤더와 공식 도메인을 비교해 자기 자신으로 리디렉션하지 않습니다. 콜백은 `AUTH_SITE_URL`(기본 https://byeolieum.com)의 고정 주소를 사용합니다. 로그인은 이 공식 도메인에서 시작합니다. 도메인 설정에서 www로 강제 이동한다면 AUTH_SITE_URL과 네이버 등록 콜백을 실제 최종 도메인으로 함께 변경합니다.

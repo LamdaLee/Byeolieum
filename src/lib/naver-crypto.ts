@@ -12,6 +12,13 @@ export function digest(value: string) {
 export function internalNaverEmail(subject: string, key: string) {
   return `naver-${createHmac("sha256", key).update(subject).digest("hex").slice(0, 32)}@accounts.byeolieum.com`;
 }
+export function internalSocialEmail(
+  provider: string,
+  subject: string,
+  key: string,
+) {
+  return `${provider}-${createHmac("sha256", key).update(`${provider}:${subject}`).digest("hex").slice(0, 32)}@accounts.byeolieum.com`;
+}
 export function equalState(a: string | undefined, b: string | null) {
   if (!a || !b || a.length > 128 || b.length > 128) return false;
   const left = Buffer.from(a),

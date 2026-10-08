@@ -81,3 +81,7 @@ BYEOLIEUM_TEST_URL=http://127.0.0.1:3219 python tests/cloud-browser.py
 게스트 가져오기, 원본 보존, 두 기기 복원, 충돌 시 자동 덮어쓰기 차단, 저장 실패/재시도, 로그아웃, 손상 보관함 보존, Google/Kakao PKCE 요청과 Naver 세션 교환/만료를 검사합니다. `tests/naver-bridge.test.mjs`는 실제 SDK를 사용하되 외부 HTTP를 fixture로 대체해 새 회원의 signup 인증과 기존 회원 magiclink 인증, UUID 재사용, 암호화된 전달의 일회용 소비를 검사합니다. 실제 제공자 동의 화면과 운영 Supabase 로그인은 키/제공자/SQL 등록 뒤 별도로 확인해야 합니다.
 
 `tests/cloud-rls-bootstrap.sql`, `tests/cloud-rls.sql`, `tests/naver-rls.sql`은 격리된 로컬 PostgreSQL 테스트용입니다. 운영에는 `supabase/migrations/`의 두 SQL만 순서대로 실행합니다.
+
+## 카카오 ID 전용 로그인
+
+카카오 기본 Supabase OAuth 대신 서버 연결을 사용합니다. `tests/kakao-bridge.test.mjs`는 ID만 반환하는 provider fixture로 첫 가입·재로그인·사용자 매핑·세션 전달을 검사합니다. `tests/kakao-redirect.py`는 fixture 서버에서 scope가 없는 카카오 authorize URL, 고정 콜백, 프록시 Host 변경에 대한 반복 이동 방지를 검사합니다. `tests/cloud-browser.py`는 카카오 복귀·만료를 포함합니다. 실제 카카오 인증은 새 서버 키/콜백과 마이그레이션 등록 후 확인해야 합니다.

@@ -11,6 +11,7 @@ token=b64({'alg':'HS256','typ':'JWT'})+'.'+b64({'sub':USER,'exp':int(time.time()
 user={'id':USER,'aud':'authenticated','role':'authenticated','email':'fixture@example.test','app_metadata':{'provider':'google','providers':['google']},'user_metadata':{},'created_at':'2026-10-08T00:00:00Z'}
 session={'access_token':token,'refresh_token':'fixture-refresh','expires_in':3600,'expires_at':int(time.time())+3600,'token_type':'bearer','user':user}
 def seed(ctx,authenticated=True):
+ ctx.route(BASE+'/api/auth/kakao/status',lambda r:r.fulfill(content_type='application/json',body='{"enabled":true}'))
  values={'byeolieum-project-v1':json.dumps(project,ensure_ascii=False)}
  if authenticated:values['sb-fixture-auth-token']=json.dumps(session)
  ctx.add_init_script('(()=>{const values='+json.dumps(values)+';for(const [key,value] of Object.entries(values)){if(!localStorage.getItem(key))localStorage.setItem(key,value)}})()')
@@ -81,7 +82,7 @@ with sync_playwright() as p:
  print('PASS explicit conflict reload, network failure pause/retry and logout guest restoration',flush=True)
  ctx.close();ctx2.close()
  # OAuth request is redirected to the expected provider with PKCE; provider pages are fixtures.
- for provider,label in [('google','Google로 계속하기'),('kakao','카카오로 계속하기')]:
+ for provider,label in [('google','Google로 계속하기')]:
   ctx=browser.new_context();seed(ctx,False);ctx.route(SUPABASE+'/**',handle)
   def oauth(route,request,provider=provider):
    from urllib.parse import urlparse,parse_qs
@@ -135,4 +136,30 @@ with sync_playwright() as p:
  page=ctx.new_page();page.goto(BASE+'/?naver_login=ready');expect(page.locator('.account-panel .error')).to_contain_text('만료')
  assert not page.evaluate("localStorage.getItem('sb-fixture-auth-token')")
  print('PASS Naver consent redirect, native session handoff, private email hidden and expired handoff (fixture)',flush=True)
+ ctx.close()
+ # Kakao server handoff becomes a native Supabase session, without displaying internal email.
+ ctx=browser.new_context();seed(ctx,False);ctx.route(SUPABASE+'/**',handle)
+ ctx.route(BASE+'/api/auth/kakao/status',lambda r:r.fulfill(content_type='application/json',body='{"enabled":true}'))
+ ctx.route(BASE+'/api/auth/kakao/start',lambda r:r.fulfill(content_type='text/html',body='<h1>Fixture Kakao consent</h1>'))
+ page=ctx.new_page();page.goto(BASE);page.get_by_role('button',name='로그인 · 계정',exact=True).click()
+ page.get_by_role('button',name='카카오로 계속하기',exact=True).click();expect(page.get_by_role('heading',name='Fixture Kakao consent')).to_be_visible()
+ ctx.close()
+ ctx=browser.new_context();seed(ctx,False)
+ kakao_user={**user,'email':'kakao-internal@accounts.byeolieum.com','user_metadata':{'login_provider':'kakao','display_name':'카카오 계정'}}
+ def kakao_handle(r):
+  if '/auth/v1/user' in r.request.url:r.fulfill(content_type='application/json',body=json.dumps(kakao_user))
+  else:handle(r)
+ ctx.route(SUPABASE+'/**',kakao_handle)
+ ctx.route(BASE+'/api/auth/kakao/session',lambda r:r.fulfill(content_type='application/json',body=json.dumps({'access_token':token,'refresh_token':'fixture-refresh'})))
+ page=ctx.new_page();page.goto(BASE+'/?kakao_login=ready')
+ expect(page.locator('.account-email')).to_have_text('카카오 계정')
+ assert 'kakao_login' not in page.url
+ assert 'kakao-internal@' not in page.locator('body').inner_text()
+ expect(page.get_by_role('button',name='계정 기록 이어 하기')).to_be_visible()
+ ctx.close()
+ ctx=browser.new_context();seed(ctx,False);ctx.route(SUPABASE+'/**',handle)
+ ctx.route(BASE+'/api/auth/kakao/session',lambda r:r.fulfill(status=401,content_type='application/json',body='{"error":"expired"}'))
+ page=ctx.new_page();page.goto(BASE+'/?kakao_login=ready');expect(page.locator('.account-panel .error')).to_contain_text('만료')
+ assert not page.evaluate("localStorage.getItem('sb-fixture-auth-token')")
+ print('PASS Kakao consent redirect, native session handoff, private email hidden and expired handoff (fixture)',flush=True)
  ctx.close();browser.close()

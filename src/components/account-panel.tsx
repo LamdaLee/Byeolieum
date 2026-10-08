@@ -83,13 +83,24 @@ export default function AccountPanel({
       data.subscription.unsubscribe();
     };
   }, [client]);
-  const naverExchange = useRef(false);
+  const socialExchange = useRef(false);
   useEffect(() => {
-    if (!client || naverExchange.current) return;
+    if (!client || socialExchange.current) return;
     const params = new URLSearchParams(window.location.search);
-    if (!params.has("naver_login") && !params.has("login_error")) return;
-    naverExchange.current = true;
-    const success = params.get("naver_login") === "ready";
+    if (
+      !params.has("kakao_login") &&
+      !params.has("naver_login") &&
+      !params.has("login_error")
+    )
+      return;
+    socialExchange.current = true;
+    const provider =
+      params.has("kakao_login") || params.get("login_error") === "kakao"
+        ? "kakao"
+        : "naver";
+    const label = provider === "kakao" ? "카카오" : "네이버";
+    const success = params.get(`${provider}_login`) === "ready";
+    params.delete("kakao_login");
     params.delete("naver_login");
     params.delete("login_error");
     window.history.replaceState(
@@ -102,7 +113,7 @@ export default function AccountPanel({
     if (!success) {
       queueMicrotask(() =>
         setError(
-          "네이버 로그인을 완료하지 못했어요. 설정을 확인한 뒤 다시 시도해 주세요.",
+          `${label} 로그인을 완료하지 못했어요. 설정을 확인한 뒤 다시 시도해 주세요.`,
         ),
       );
       return;
@@ -110,7 +121,7 @@ export default function AccountPanel({
     queueMicrotask(() => setBusy(true));
     void (async () => {
       try {
-        const response = await fetch("/api/auth/naver/session", {
+        const response = await fetch(`/api/auth/${provider}/session`, {
           method: "POST",
           credentials: "same-origin",
         });
@@ -119,7 +130,7 @@ export default function AccountPanel({
         const { error } = await client.auth.setSession(tokens);
         if (error) throw error;
       } catch {
-        setError("네이버 로그인 연결이 만료됐어요. 다시 로그인해 주세요.");
+        setError(`${label} 로그인 연결이 만료됐어요. 다시 로그인해 주세요.`);
       } finally {
         setBusy(false);
       }
@@ -295,7 +306,7 @@ export default function AccountPanel({
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [serialized, mode, tick]);
-  async function login(provider: "google" | "kakao") {
+  async function login(provider: "google") {
     if (!client) return;
     setBusy(true);
     setError("");
@@ -459,7 +470,12 @@ export default function AccountPanel({
                 <button
                   className="social-kakao"
                   disabled={busy || !providers?.kakao}
-                  onClick={() => void login("kakao")}
+                  onClick={() =>
+                    window.location.assign(
+                      new URL("/api/auth/kakao/start", window.location.origin)
+                        .href,
+                    )
+                  }
                 >
                   카카오로 계속하기
                   {providers && !providers.kakao ? " · 연결 준비 중" : ""}
@@ -486,8 +502,8 @@ export default function AccountPanel({
           ) : (
             <>
               <p className="account-email">
-                {user.user_metadata?.login_provider === "naver"
-                  ? user.user_metadata.display_name || "네이버 계정"
+                {["naver", "kakao"].includes(user.user_metadata?.login_provider)
+                  ? user.user_metadata.display_name || "로그인한 계정"
                   : user.email || "로그인한 계정"}
               </p>
               <p>

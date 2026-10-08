@@ -115,6 +115,7 @@ export default function Studio() {
     const frame = requestAnimationFrame(() => {
       const params = new URLSearchParams(window.location.search);
       if (
+        params.has("kakao_login") ||
         params.has("naver_login") ||
         params.has("login_error") ||
         params.has("code") ||
