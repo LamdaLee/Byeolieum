@@ -73,3 +73,8 @@ OAuth state 검증 후 세션은 암호화한 60초 일회용 레코드에 저�
 ## 검증 범위
 
 브라우저 자동 검사는 소셜 인증과 Supabase 응답을 대체하는 테스트 fixture를 사용합니다. 실제 Google/Kakao/Naver 동의 화면과 실프로젝트 인증은 제공자 등록 후 확인해야 합니다. RLS와 revision 충돌은 실제 로컬 PostgreSQL 17에서 별도 검사합니다. `tests/cloud-rls-bootstrap.sql`은 로컬 테스트 컨테이너 전용이며 실프로젝트에 실행하지 않습니다.
+
+## 로그인 연결 문제 확인
+
+- Google/Kakao가 ‘연결 준비 중’이면 Authentication → Sign In / Providers에서 해당 제공자를 Enabled로 켜고 Client ID/Secret을 등록합니다. Vercel에 Supabase 키만 등록하는 것으로 제공자가 켜지지는 않습니다. 이미 활성화했다면 Vercel의 공개 Supabase URL/키가 같은 프로젝트인지 확인합니다.
+- Naver 시작 경로는 프록시의 Host 헤더와 공식 도메인을 비교해 자기 자신으로 리디렉션하지 않습니다. 콜백은 `AUTH_SITE_URL`(기본 https://byeolieum.com)의 고정 주소를 사용합니다. 로그인은 이 공식 도메인에서 시작합니다. 도메인 설정에서 www로 강제 이동한다면 AUTH_SITE_URL과 네이버 등록 콜백을 실제 최종 도메인으로 함께 변경합니다.

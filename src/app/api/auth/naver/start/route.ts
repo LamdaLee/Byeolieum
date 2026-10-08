@@ -1,18 +1,18 @@
 import { connection } from "next/server";
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import {
   naverConfig,
   nonce,
   cookieOptions,
   STATE_COOKIE,
 } from "@/lib/naver-server";
-export async function GET(request: NextRequest) {
+export async function GET() {
   await connection();
   const config = naverConfig();
   if (!config.enabled)
     return NextResponse.redirect(`${config.origin}/?login_error=naver`);
-  if (request.headers.get("host") !== new URL(config.origin).host)
-    return NextResponse.redirect(`${config.origin}/api/auth/naver/start`);
+  // Reverse proxies may rewrite Host. Keep the callback fixed to the configured
+  // origin without redirecting this endpoint back to itself.
   const state = nonce(),
     url = new URL("https://nid.naver.com/oauth2.0/authorize");
   url.search = new URLSearchParams({
